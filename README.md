@@ -1,111 +1,52 @@
-# Enterprise Multi-Tenant B2B SaaS Platform
+# MultiTenantSaas
 
-A production-grade, multi-tenant B2B SaaS foundation with strict database Row-Level Security (RLS), hybrid shared/dedicated data placement, transactional event outbox, and enterprise AI capabilities.
+NestJS + Next.js workspace application with the uploaded Claude interface, French UI, tenant branding, PostgreSQL RLS, cookie sessions, invitations and role-based access.
 
----
+## Working features
 
-## 1. Architecture Highlights
+- Register, password login, persisted HttpOnly session, logout with server-side revocation; suspended accounts are rejected on every request.
+- Create and switch workspaces. Creation atomically provisions branding, quotas, roles, owner membership and five module entitlements.
+- Dashboard reads live member counts, token/cost quotas, enabled modules and audit events.
+- Invite members with expiring single-use links, accept as the matching account, change roles and remove members. Seat limits and last-owner protection run under a workspace lock.
+- Persist branding, logo URL, theme and domain metadata; enable/disable supported module entitlements; view immutable audit history.
+- Route/header tenant matching, membership checks, RBAC, transaction-local RLS and composite foreign keys protect tenant boundaries.
 
-- **TypeScript Monorepo**: Managed via `pnpm` workspaces and `Turborepo`.
-- **Backend**: NestJS modular architecture with REST, OpenAPI (`/api/docs`), and AsyncLocalStorage tenant context.
-- **Database & Tenant Security**:
-  - PostgreSQL 16 with Row-Level Security (`ENABLE ROW LEVEL SECURITY` & `FORCE ROW LEVEL SECURITY`).
-  - Transaction-local context injection (`SET LOCAL app.current_tenant_id = $1`).
-  - Dedicated least-privilege application role `saas_app_user` with `NOBYPASSRLS`.
-- **Hybrid Data Placement**:
-  - `SHARED` mode: RLS-isolated shared tables.
-  - `DEDICATED` mode: Server-side routing to isolated physical databases for enterprise compliance.
-- **Analytics & Outbox**:
-  - Transactional Outbox pattern emitting business events to ClickHouse.
-- **AI Gateway & Capabilities**:
-  - Tenant token quotas and monthly cost budgets.
-  - Local mock provider fallback for offline testing.
-  - RAG document ingestion with `pgvector` embeddings.
-  - Read-only ClickHouse identity for Natural-Language-to-SQL.
+## Development
 
----
+Use Node 22, pnpm 9.15.9 and PostgreSQL 16 with pgvector. `pnpm install --frozen-lockfile`, then `pnpm build` and `pnpm type-check`.
 
-## 2. Directory Structure
+Copy `.env.example` to `.env`, set independent credentials and a random JWT secret, initialize PostgreSQL with `infra/docker/init-database.sh` and all migrations, then run `pnpm dev`. The API is on port 4000, Swagger at `/api/docs`, and the frontend on port 3000. If the database runs in Docker, expose port 5432 only to localhost for host-based development. `apps/web/.env.local` can set `API_INTERNAL_URL`; the default is `http://localhost:4000`.
 
-```
-enterprise-saas-platform/
-├── apps/
-│   ├── web/                     # Next.js 14 frontend (App Router, Tailwind CSS, shadcn/ui)
-│   ├── api/                     # NestJS backend API with RLS engine
-│   ├── ai-service/              # Python/FastAPI ML & predictive services
-│   └── worker/                  # BullMQ background worker for Outbox & RAG processing
-├── packages/
-│   ├── ui/                      # Shared design tokens & UI components
-│   ├── types/                   # Shared domain contracts, DTOs, and event schemas
-│   └── config/                  # Shared tooling, ESLint, and Prettier configs
-├── infra/
-│   ├── docker/                  # Docker Compose (Postgres+pgvector, Redis, ClickHouse, MinIO)
-│   ├── migrations/              # Versioned SQL migrations and explicit RLS policies
-│   └── scripts/                 # Provisioning and seed scripts
-├── docs/
-│   ├── architecture/            # Overview, ADRs (Decisions)
-│   ├── security/                # Threat model and RLS boundary
-│   └── development/             # Roadmap, verification gates, local setup
-└── .github/workflows/ci.yml     # Continuous Integration pipeline
+The browser uses a same-origin Next.js proxy. No bearer token is stored in browser JavaScript storage. Use the invited email when registering through an invitation link; existing accounts should log in instead. Owners copy the generated link and send it privately. Email delivery is not configured.
+
+## Verification
+
+```sh
+pnpm build
+pnpm type-check
+pnpm test
+# Against an initialized, disposable PostgreSQL database with both URLs set:
+pnpm --filter @saas/api test:integration
 ```
 
----
+The default suite has 35 tests using mocks/the legacy test-only SQL emulator, plus seven explicitly skipped live database tests. Only the separate live suite validates actual PostgreSQL policies and HTTP lifecycle behavior. CI provisions pgvector, applies migrations, runs both suites and builds both Docker targets. See [validation notes](docs/development/integration-validation.md) for actual results and environment limitations.
 
-## 3. Quick Start & Local Setup
+## Deployment
 
-### 3.1 Prerequisites
-- Node.js 20+ LTS
-- pnpm 9+
-- Docker & Docker Compose (optional for live databases)
+See [deployment guide](docs/development/deployment.md). Root `compose.yml` runs the database, API and frontend, with only the frontend bound to localhost. Production requires an HTTPS reverse proxy and secure random credentials. No deployment is performed by this change.
 
-### 3.2 Install Dependencies
-```bash
-pnpm install
-```
+## Roles
 
-### 3.3 Start Local Infrastructure
-```bash
-cd infra/docker
-docker compose up -d
-```
+| Capability | Owner | Member | Viewer |
+| --- | --- | --- | --- |
+| Dashboard, members, branding, quotas, module list | Yes | Yes | Yes |
+| Manage members, settings, module entitlements | Yes | No | No |
+| Audit history | Yes | No | No |
+| Document read permission | Yes | Yes | Yes |
+| Document write and AI use permissions | Yes | Yes | No |
 
-### 3.4 Build Packages
-```bash
-pnpm --filter @saas/types build
-pnpm --filter @saas/api build
-```
+Document/AI permissions are reserved for future services; their presence does not implement those services. The server remains authoritative; restricted API responses appear as permission errors in the interface.
 
-### 3.5 Run Multi-Tenant Verification Tests
-```bash
-pnpm --filter @saas/api test
-```
+## Explicit boundaries
 
-### 3.6 Start API Development Server
-```bash
-pnpm --filter @saas/api dev
-```
-Open [http://localhost:4000/api/docs](http://localhost:4000/api/docs) to explore the OpenAPI documentation.
-
----
-
-## 4. Automated Verification Results
-
-| Suite | Status | Focus |
-|---|---|---|
-| `test/tenant-context.spec.ts` | **PASS (4/4)** | AsyncLocalStorage context isolation across asynchronous boundaries |
-| `test/tenant-isolation-rls.spec.ts` | **PASS (3/3)** | Proves Tenant A cannot read/target Tenant B resources; connection pool reset |
-| `test/guards.spec.ts` | **PASS (8/8)** | Membership guard, RBAC permission resolution, Platform admin separation |
-| `test/hybrid-placement.spec.ts` | **PASS (3/3)** | Dynamic connection routing for SHARED vs DEDICATED enterprise tenants |
-| `test/security-regressions.spec.ts` | **PASS (9/9)** | Zod validation, XSS/injection prevention, placement authorization gates, RLS on membership_roles |
-| `test/e2e-api.spec.ts` | **PASS (5/5)** | Full lifecycle: provisioning, branding CSS variables, quotas, audit, outbox |
-| **Total** | **PASS (32/32)** | Zero regressions, 100% passing build |
-
----
-
-## 5. Security & Isolation Controls Audited
-
-1. **PostgreSQL RLS with App User Role**: Enforced on all 17 tenant-scoped tables including `membership_roles`. The runtime role `saas_app_user` has `NOBYPASSRLS`.
-2. **Context Leak Prevention**: Transaction-local `SET LOCAL app.current_tenant_id = $1` automatically resets on transaction completion, preventing pooled connection contamination.
-3. **RBAC & Authorization Guards**: Every mutating endpoint enforces `@RequirePermissions(...)` checked via trusted server-side membership and role permissions.
-4. **Input Sanitization**: All DTOs validated strictly via `ZodValidationPipe`, disallowing invalid slugs, malformed URLs, and non-hex colors.
-5. **Dedicated Database Placement Gate**: Dedicated physical infrastructure allocation is strictly gated behind platform administrator authorization.
+AI chat execution, RAG ingestion, prediction, agents, NL-to-SQL, file storage and outbox delivery workers are not implemented in this repository. The module screen manages their entitlements only. Provider credentials alone will not add these services. Custom domains are saved metadata; DNS/TLS provisioning is external. Dedicated database routing is scaffolded but not connected to runtime queries, so production workspace creation rejects dedicated placement. Password reset and email ownership verification also require a mail/identity integration. Existing passwordless development accounts cannot log in until securely migrated by an operator; there is no email-only compatibility bypass.

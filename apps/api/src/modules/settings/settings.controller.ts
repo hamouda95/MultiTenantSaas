@@ -22,10 +22,9 @@ export class SettingsController {
 
   @Patch()
   @RequirePermissions('settings:manage')
-  @UsePipes(new ZodValidationPipe(UpdateSettingsDtoSchema))
   async updateSettings(
     @CurrentTenant() tenant: TenantContext,
-    @Body() body: UpdateSettingsDto,
+    @Body(new ZodValidationPipe(UpdateSettingsDtoSchema)) body: UpdateSettingsDto,
   ) {
     return this.settingsService.updateSettings(tenant.tenantId, {
       logoUrl: body.logoUrl,

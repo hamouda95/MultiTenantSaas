@@ -7,8 +7,8 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 @Module({
   imports: [
     JwtModule.register({
-      secret: process.env.JWT_SECRET || 'dev_secret_key_change_in_production_32chars',
-      signOptions: { expiresIn: '24h' },
+      // Secret is resolved at signing/verification after ConfigModule loads environment.
+      signOptions: { expiresIn: '8h' },
     }),
   ],
   controllers: [IdentityController],

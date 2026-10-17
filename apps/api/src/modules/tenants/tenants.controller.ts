@@ -1,4 +1,5 @@
-import { Controller, Post, Get, Body, Param, UseGuards, UsePipes } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Delete, Body, Param, UseGuards, UsePipes } from '@nestjs/common';
+import { z } from 'zod';
 import { TenantsService } from './tenants.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { TenantMembershipGuard } from '../../common/guards/tenant-membership.guard';
@@ -21,10 +22,9 @@ export class TenantsController {
   constructor(private readonly tenantsService: TenantsService) {}
 
   @Post()
-  @UsePipes(new ZodValidationPipe(CreateTenantDtoSchema))
   async createTenant(
     @CurrentUser() user: AuthenticatedUserContext,
-    @Body() body: CreateTenantDto,
+    @Body(new ZodValidationPipe(CreateTenantDtoSchema)) body: CreateTenantDto,
   ) {
     return this.tenantsService.createTenant({
       name: body.name,
@@ -33,6 +33,29 @@ export class TenantsController {
       placementMode: body.placementMode,
       primaryColor: body.primaryColor,
     });
+  }
+
+  @Post('invitations/accept')
+  async acceptInvitation(@CurrentUser() user: AuthenticatedUserContext,
+    @Body(new ZodValidationPipe(z.object({ token: z.string().regex(/^[a-f0-9]{64}$/) }))) body: { token: string }) {
+    return this.tenantsService.acceptInvitation(body.token, user.userId);
+  }
+
+  @Patch(':tenantId/members/:membershipId')
+  @UseGuards(TenantMembershipGuard, RbacGuard)
+  @RequirePermissions('members:manage')
+  async updateMember(@CurrentTenant() tenant: TenantContext,
+    @Param('membershipId', new ZodValidationPipe(z.string().uuid())) id: string,
+    @Body(new ZodValidationPipe(z.object({ role: z.enum(['Owner','Member','Viewer']) }))) body: { role: string }) {
+    return this.tenantsService.updateMember(tenant.tenantId, id, body.role);
+  }
+
+  @Delete(':tenantId/members/:membershipId')
+  @UseGuards(TenantMembershipGuard, RbacGuard)
+  @RequirePermissions('members:manage')
+  async removeMember(@CurrentTenant() tenant: TenantContext,
+    @Param('membershipId', new ZodValidationPipe(z.string().uuid())) id: string) {
+    return this.tenantsService.updateMember(tenant.tenantId, id, undefined, true);
   }
 
   @Get(':tenantId')

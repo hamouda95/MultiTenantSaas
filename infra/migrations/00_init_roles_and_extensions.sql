@@ -18,8 +18,7 @@ BEGIN
       NOCREATEDB
       NOCREATEROLE
       NOINHERIT
-      NOBYPASSRLS
-      PASSWORD 'app_secure_password_123';
+      NOBYPASSRLS;
   END IF;
 END
 $$;

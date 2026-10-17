@@ -27,6 +27,7 @@ export class RlsPostgresService implements OnModuleInit, OnModuleDestroy {
   }
 
   public setInMemoryMode(enabled: boolean) {
+    if (enabled && process.env.NODE_ENV !== 'test') throw new Error('Test database engine is disabled outside tests');
     this.inMemoryMode = enabled;
   }
 
@@ -35,6 +36,7 @@ export class RlsPostgresService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async initializePools() {
+    if (process.env.NODE_ENV === 'test' && process.env.LIVE_DATABASE_TESTS !== '1') { this.inMemoryMode = true; return; }
     const appDatabaseUrl =
       process.env.DATABASE_URL ||
       'postgresql://saas_app_user:app_secure_password_123@localhost:5432/saas_production?schema=public';
@@ -63,12 +65,25 @@ export class RlsPostgresService implements OnModuleInit, OnModuleDestroy {
       client.release();
       this.isConnected = true;
       this.logger.log('Connected successfully to PostgreSQL instance with RLS support');
-    } catch {
-      this.logger.warn(
-        'PostgreSQL instance not immediately reachable at startup. Activating resilient in-memory verification engine for isolated testing.',
-      );
-      this.inMemoryMode = true;
+    } catch (error) {
+      await this.closePools();
+      throw new Error('PostgreSQL is required; refusing to start without persistent storage');
     }
+  }
+
+  async runAdminTransaction<T>(callback: (client: PoolClient) => Promise<T>): Promise<T> {
+    if (this.inMemoryMode) return this.executeInMemoryTenantTransaction(null as any, callback);
+    if (!this.adminPool) throw new Error('Database not initialized');
+    const client = await this.adminPool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await callback(client);
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally { client.release(); }
   }
 
   public async closePools() {
@@ -96,7 +111,7 @@ export class RlsPostgresService implements OnModuleInit, OnModuleDestroy {
     const client = await this.appPool.connect();
     try {
       await client.query('BEGIN;');
-      await client.query('SET LOCAL app.current_tenant_id = $1;', [tenantId]);
+      await client.query("SELECT set_config('app.current_tenant_id', $1, true)", [tenantId]);
 
       const result = await callback(client);
 

@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+import { TenantContextService } from '../../common/tenant-context';
 import { Injectable, NotFoundException, Inject } from '@nestjs/common';
 import { RlsPostgresService } from '../../database/rls-postgres.service';
 import { TenantSettings } from '@saas/types';
@@ -82,12 +84,16 @@ export class SettingsService {
                            theme_mode as "themeMode", custom_domain as "customDomain",
                            metadata, created_at as "createdAt", updated_at as "updatedAt"`;
 
-    const res = await this.rlsDb.queryInTenantContext<TenantSettings>(tenantId, sql, params);
+    return this.rlsDb.runInTenantContext(tenantId, async client => {
+    const res = await client.query<TenantSettings>(sql, params);
 
     if (!res.rows[0]) {
       throw new NotFoundException(`Tenant settings not found for update`);
     }
 
+    await client.query(`INSERT INTO audit_logs (id,tenant_id,actor_id,action,resource_type,resource_id) VALUES ($1,$2,$3,$4,$5,$6)`,
+      [randomUUID(), tenantId, TenantContextService.get()?.user?.userId || null, 'settings.updated', 'settings', tenantId]);
     return res.rows[0];
+    });
   }
 }

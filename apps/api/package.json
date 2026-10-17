@@ -10,7 +10,8 @@
     "dev": "ts-node src/main.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:integration": "LIVE_DATABASE_TESTS=1 vitest run test/live-database.spec.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.5",

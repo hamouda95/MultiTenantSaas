@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable, Logger, Inject } from '@nestjs/common';
 import { RlsPostgresService } from '../../database/rls-postgres.service';
 import { BusinessEvent } from '@saas/types';
@@ -19,7 +20,7 @@ export class OutboxService {
     payload: T,
     client?: PoolClient,
   ): Promise<BusinessEvent<T>> {
-    const id = `evt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const id = randomUUID();
     const eventVersion = '1.0';
 
     const sql = `INSERT INTO business_events (id, tenant_id, event_type, event_version, payload)

@@ -1,3 +1,5 @@
+import { TenantContextService } from '../../common/tenant-context';
+import { randomUUID } from 'node:crypto';
 import { Injectable, ForbiddenException, NotFoundException, Inject } from '@nestjs/common';
 import { RlsPostgresService } from '../../database/rls-postgres.service';
 import { TenantModule, TenantQuota } from '@saas/types';
@@ -30,16 +32,19 @@ export class EntitlementsService {
     isEnabled: boolean,
     configuration: Record<string, unknown> = {},
   ): Promise<TenantModule> {
-    const res = await this.rlsDb.queryInTenantContext<TenantModule>(
-      tenantId,
+    return this.rlsDb.runInTenantContext(tenantId, async client => {
+    const res = await client.query<TenantModule>(
       `INSERT INTO tenant_modules (id, tenant_id, module_key, is_enabled, configuration)
        VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (tenant_id, module_key)
        DO UPDATE SET is_enabled = EXCLUDED.is_enabled, configuration = EXCLUDED.configuration, updated_at = NOW()
        RETURNING id, tenant_id as "tenantId", module_key as "moduleKey", is_enabled as "isEnabled", configuration, created_at as "createdAt", updated_at as "updatedAt"`,
-      [`mod-${tenantId}-${moduleKey}`, tenantId, moduleKey, isEnabled, JSON.stringify(configuration)],
+      [randomUUID(), tenantId, moduleKey, isEnabled, JSON.stringify(configuration)],
     );
+    await client.query(`INSERT INTO audit_logs (id,tenant_id,actor_id,action,resource_type,resource_id) VALUES ($1,$2,$3,$4,$5,$6)`,
+      [randomUUID(), tenantId, TenantContextService.get()?.user?.userId || null, 'module.updated', 'module', tenantId]);
     return res.rows[0];
+    });
   }
 
   /**
