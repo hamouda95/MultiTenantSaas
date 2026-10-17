@@ -18,6 +18,7 @@ import {
   X,
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useToast } from '@/components/toast';
 import { LAST_TENANT_KEY, useAuth, useTenantAccess, useWorkspaces } from '@/lib/auth';
 import { cn, initials } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
@@ -150,6 +151,7 @@ function WorkspaceSwitcher({ tenantId, name, logoUrl }: { tenantId: string; name
 
 function UserMenu() {
   const { user, logout } = useAuth();
+  const toast = useToast();
   const { open, setOpen, ref } = usePopover();
   if (!user) return null;
   return (
@@ -179,7 +181,7 @@ function UserMenu() {
           </div>
           <button
             role="menuitem"
-            onClick={logout}
+            onClick={() => { void logout().catch(() => toast('error', 'Déconnexion impossible. Réessayez.')); }}
             className="mt-1 flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-surface-2"
           >
             <LogOut className="h-4 w-4" /> Se déconnecter

@@ -29,6 +29,7 @@ function LoginForm() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setServerError(null);
+    if (creating && fullName.trim().length < 2) { setServerError('Le nom doit contenir au moins 2 caractères.'); return; }
     const parsed = fieldErrors(loginSchema, { email: email.trim(), password: password || undefined });
     if (!parsed.ok) {
       setErrors(parsed.errors);

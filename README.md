@@ -1,6 +1,6 @@
 # MultiTenantSaas
 
-NestJS + Next.js workspace application with the uploaded Claude interface, French UI, tenant branding, PostgreSQL RLS, cookie sessions, invitations and role-based access.
+NestJS 11 + Next.js 15 workspace application with the uploaded Claude interface, French UI, tenant branding, PostgreSQL RLS, cookie sessions, invitations and role-based access.
 
 ## Working features
 

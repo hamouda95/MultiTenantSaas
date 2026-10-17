@@ -36,6 +36,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm audit --prod --audit-level=high
       - name: Initialize real PostgreSQL schema and restricted roles
         env:
           PGHOST: localhost

@@ -9,8 +9,6 @@ import { AuditModule } from "./modules/audit/audit.module";
 import { EventsModule } from "./modules/events/events.module";
 import { HealthModule } from "./modules/health/health.module";
 import { TenantContextService } from "./common/tenant-context";
-import { RlsPostgresService } from "./database/rls-postgres.service";
-import { jwtSecret } from "./common/auth-security";
 import { Request, Response, NextFunction } from "express";
 
 @Module({
@@ -86,6 +84,6 @@ export class AppModule implements NestModule {
           () => next(),
         );
       })
-      .forRoutes("*");
+      .forRoutes("{*splat}");
   }
 }

@@ -51,6 +51,7 @@ describe.skipIf(!live)("Real PostgreSQL API and RLS integration", () => {
       status: response.status,
       body: await response.json(),
       cookie: response.headers.get("set-cookie")?.split(";")[0] || "",
+      setCookie: response.headers.get("set-cookie") || "",
     };
   }
   beforeAll(async () => {
@@ -75,6 +76,8 @@ describe.skipIf(!live)("Real PostgreSQL API and RLS integration", () => {
     });
     expect(account.status).toBe(201);
     expect(account.cookie).toContain("saas_session=");
+    expect(account.setCookie).toMatch(/HttpOnly/i);
+    expect(account.setCookie).toMatch(/SameSite=Lax/i);
     expect(account.body.token).toBeUndefined();
     expect(account.body.user.password_hash).toBeUndefined();
     ownerCookie = account.cookie;
@@ -230,6 +233,9 @@ describe.skipIf(!live)("Real PostgreSQL API and RLS integration", () => {
         })
       ).status,
     ).toBe(400);
+    await admin.query("UPDATE invitations SET expires_at=NOW() - INTERVAL '1 second' WHERE membership_id=$1", [memberId]);
+    expect((await request('/tenants/invitations/accept', { method: 'POST', cookie: viewerCookie, body: { token: inviteToken } })).status).toBe(400);
+    await admin.query("UPDATE invitations SET expires_at=NOW() + INTERVAL '1 day' WHERE membership_id=$1", [memberId]);
     expect(
       (
         await request("/tenants/invitations/accept", {
