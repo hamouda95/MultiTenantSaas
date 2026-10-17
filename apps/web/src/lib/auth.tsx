@@ -17,7 +17,7 @@ interface AuthContextValue {
   expired: boolean;
   login: (email: string, password?: string) => Promise<Workspace[]>;
   register: (email: string, password: string, fullName: string, invitationToken?: string) => Promise<Workspace[]>;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
