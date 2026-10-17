@@ -31,9 +31,12 @@ export class TenantMembershipGuard implements CanActivate {
       throw new BadRequestException('A target tenant must be specified via x-tenant-id header or path');
     }
 
-    // UUID format validation to prevent SQL injection or malformed strings
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(requestedTenantId)) {
+    // Accept both legacy generated tenant IDs and UUIDs. Membership is always
+    // resolved server-side with parameterized SQL; an ID is never trusted alone.
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const generatedIdRegex = /^ten-[0-9]+-[a-z0-9]{5}$/;
+    if (typeof requestedTenantId !== 'string' ||
+        (!uuidRegex.test(requestedTenantId) && !generatedIdRegex.test(requestedTenantId))) {
       throw new BadRequestException('Invalid tenant ID format');
     }
 
