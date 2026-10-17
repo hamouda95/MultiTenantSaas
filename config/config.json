@@ -1,0 +1,35 @@
+{
+  "userSettings": {
+    "autoExecutionPolicy": "CASCADE_COMMANDS_AUTO_EXECUTION_AUTO",
+    "enableTerminalSandbox": true,
+    "globalPermissionGrants": {
+      "allow": [
+        "command(npm install)",
+        "command(pnpm install)",
+        "command(npx vitest run)",
+        "command(npx tsc -p tsconfig.build.json)",
+        "command(pnpm --filter @saas/api add -D @types/express)",
+        "command(node dist/main.js)",
+        "command(curl -s http://localhost:4000/health/live)",
+        "command(curl -s -X POST http://localhost:4000/api/v1/auth/login -H \"Content-Type: application/json\" -d '{\"email\":\"ceo@acmecorp.com\"}')",
+        "command(curl -s -X POST http://localhost:4000/api/v1/tenants -H \"Authorization: Bearer $TOKEN\" -H \"Content-Type: application/json\" -d '{\"name\":\"Acme Corporation\",\"slug\":\"acme-corp\",\"primaryColor\":\"#4F46E5\"}')",
+        "command(curl -s -X POST http://localhost:4000/api/v1/auth/login -H \"Content-Type: application/json\" -d '{\"email\":\"tony@stark.com\"}')",
+        "command(pnpm --filter @saas/api add -D @nestjs/testing)",
+        "command(pnpm --filter @saas/api add -D @nestjs/testing@^10.4.5)",
+        "command(pnpm --filter @saas/types build)",
+        "command(pnpm run type-check)",
+        "command(pnpm --filter @saas/api test)",
+        "command(pnpm run build)",
+        "command(curl -s https://api.github.com/repos/cli/cli/releases/latest)",
+        "command(curl -s https://api.github.com/repos/cli/cli/releases/tags/v2.60.1)",
+        "command(curl -fsSL https://github.com/cli/cli/releases/download/v2.60.1/gh_2.60.1_macOS_amd64.zip -o /Users/mohamedbenmakhlouf/.gemini/antigravity/scratch/tools/gh.zip)",
+        "command(ssh -o StrictHostKeyChecking=accept-new -T git@github.com 2\u003e\u00261)"
+      ]
+    },
+    "nonWorkspaceFileAccessPolicy": "AGENT_SETTING_POLICY_ASK",
+    "permissionGrantsV2Migrated": true,
+    "permissionPreset": "AGENT_PERMISSION_PRESET_AUTO",
+    "remoteControlHostname": "as-macbook-pro-lan-misty-vertex",
+    "sandboxEnabledAtV2Migration": true
+  }
+}
