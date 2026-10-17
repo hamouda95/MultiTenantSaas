@@ -1,9 +1,18 @@
-import { hashPassword, verifyPassword, jwtSecret } from '../../common/auth-security';
-import { randomUUID, createHash } from 'node:crypto';
-import { Injectable, UnauthorizedException, ConflictException, Inject } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
-import { RlsPostgresService } from '../../database/rls-postgres.service';
-import { User, AuthenticatedUserContext } from '@saas/types';
+import {
+  hashPassword,
+  verifyPassword,
+  jwtSecret,
+} from "../../common/auth-security";
+import { randomUUID, createHash } from "node:crypto";
+import {
+  Injectable,
+  UnauthorizedException,
+  ConflictException,
+  Inject,
+} from "@nestjs/common";
+import { JwtService } from "@nestjs/jwt";
+import { RlsPostgresService } from "../../database/rls-postgres.service";
+import { User, AuthenticatedUserContext } from "@saas/types";
 
 @Injectable()
 export class IdentityService {
@@ -13,13 +22,22 @@ export class IdentityService {
   ) {}
 
   async authenticate(email: string, password: string): Promise<User> {
-    const result = await this.rlsDb.queryAdmin('SELECT password_hash, status FROM users WHERE email = $1', [email.toLowerCase()]);
+    const result = await this.rlsDb.queryAdmin(
+      "SELECT password_hash, status FROM users WHERE email = $1",
+      [email.toLowerCase()],
+    );
     const valid = await verifyPassword(password, result.rows[0]?.password_hash);
-    if (!valid || result.rows[0]?.status !== 'ACTIVE') throw new UnauthorizedException('Invalid email or password');
+    if (!valid || result.rows[0]?.status !== "ACTIVE")
+      throw new UnauthorizedException("Invalid email or password");
     return (await this.findByEmail(email))!;
   }
 
-  async register(email: string, password: string, fullName: string, invitationToken?: string) {
+  async register(
+    email: string,
+    password: string,
+    fullName: string,
+    invitationToken?: string,
+  ) {
     const passwordHash = await hashPassword(password);
     try {
       if (invitationToken) {
@@ -28,36 +46,66 @@ export class IdentityService {
            AND EXISTS (SELECT 1 FROM memberships m JOIN invitations i ON i.membership_id=m.id
              WHERE m.user_id=users.id AND i.token_hash=$4 AND i.expires_at > NOW() AND i.accepted_at IS NULL)
            RETURNING id,email,full_name as "fullName",is_platform_admin as "isPlatformAdmin",status`,
-          [passwordHash,fullName,email.toLowerCase(),createHash('sha256').update(invitationToken).digest('hex')]);
-        if (!result.rows[0]) throw new ConflictException('Invalid invitation or account already registered');
+          [
+            passwordHash,
+            fullName,
+            email.toLowerCase(),
+            createHash("sha256").update(invitationToken).digest("hex"),
+          ],
+        );
+        if (!result.rows[0])
+          throw new ConflictException(
+            "Invalid invitation or account already registered",
+          );
         return result.rows[0];
       }
       const result = await this.rlsDb.queryAdmin<User>(
         `INSERT INTO users (id, email, full_name, password_hash, status) VALUES ($1,$2,$3,$4,'ACTIVE')
          RETURNING id, email, full_name as "fullName", is_platform_admin as "isPlatformAdmin", status`,
-        [randomUUID(), email.toLowerCase(), fullName, passwordHash]);
+        [randomUUID(), email.toLowerCase(), fullName, passwordHash],
+      );
       return result.rows[0];
     } catch (error: any) {
-      if (error.code === '23505') throw new ConflictException('Account already exists');
+      if (error.code === "23505")
+        throw new ConflictException("Account already exists");
       throw error;
     }
   }
 
   async revokeSession(cookie: string | undefined) {
-    const token = cookie?.split(';').map(v => v.trim()).find(v => v.startsWith('saas_session='))?.slice(13);
+    const token = cookie
+      ?.split(";")
+      .map((v) => v.trim())
+      .find((v) => v.startsWith("saas_session="))
+      ?.slice(13);
     if (!token) return;
     let payload: { jti: string };
-    try { payload = await this.jwtService.verifyAsync(token, { secret: jwtSecret(), algorithms: ['HS256'] }); }
-    catch { return; }
-    await this.rlsDb.queryAdmin('DELETE FROM auth_sessions WHERE id = $1', [payload.jti]);
+    try {
+      payload = await this.jwtService.verifyAsync(token, {
+        secret: jwtSecret(),
+        algorithms: ["HS256"],
+      });
+    } catch {
+      return;
+    }
+    await this.rlsDb.queryAdmin("DELETE FROM auth_sessions WHERE id = $1", [
+      payload.jti,
+    ]);
   }
 
   /**
    * Issue a signed JWT token containing standard claims.
    */
-  async generateToken(user: { id: string; email: string; isPlatformAdmin: boolean }): Promise<string> {
+  async generateToken(user: {
+    id: string;
+    email: string;
+    isPlatformAdmin: boolean;
+  }): Promise<string> {
     const sessionId = randomUUID();
-    await this.rlsDb.queryAdmin(`INSERT INTO auth_sessions (id,user_id,expires_at) VALUES ($1,$2,NOW() + INTERVAL '8 hours')`, [sessionId,user.id]);
+    await this.rlsDb.queryAdmin(
+      `INSERT INTO auth_sessions (id,user_id,expires_at) VALUES ($1,$2,NOW() + INTERVAL '8 hours')`,
+      [sessionId, user.id],
+    );
     const payload = {
       jti: sessionId,
       sub: user.id,
@@ -68,7 +116,7 @@ export class IdentityService {
 
     return this.jwtService.signAsync(payload, {
       secret: jwtSecret(),
-      expiresIn: '8h',
+      expiresIn: "8h",
     });
   }
 
@@ -117,7 +165,12 @@ export class IdentityService {
       `INSERT INTO users (id, email, full_name, is_platform_admin, status)
        VALUES ($1, $2, $3, $4, 'ACTIVE')
        RETURNING id, email, full_name as "fullName", is_platform_admin as "isPlatformAdmin", status, created_at as "createdAt", updated_at as "updatedAt"`,
-      [userId, data.email.toLowerCase(), data.fullName, Boolean(data.isPlatformAdmin)],
+      [
+        userId,
+        data.email.toLowerCase(),
+        data.fullName,
+        Boolean(data.isPlatformAdmin),
+      ],
     );
     return result.rows[0];
   }
