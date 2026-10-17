@@ -17,7 +17,7 @@ jobs:
           POSTGRES_DB: saas_production
         ports: ['5432:5432']
         options: >-
-          --health-cmd 'pg_isready -U saas_admin -d saas_production'
+          --health-cmd "pg_isready -U saas_admin -d saas_production"
           --health-interval 5s --health-timeout 5s --health-retries 20
     env:
       NEXT_TELEMETRY_DISABLED: '1'
