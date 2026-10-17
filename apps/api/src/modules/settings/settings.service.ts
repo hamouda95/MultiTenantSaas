@@ -1,8 +1,8 @@
-import { randomUUID } from 'node:crypto';
-import { TenantContextService } from '../../common/tenant-context';
-import { Injectable, NotFoundException, Inject } from '@nestjs/common';
-import { RlsPostgresService } from '../../database/rls-postgres.service';
-import { TenantSettings } from '@saas/types';
+import { randomUUID } from "node:crypto";
+import { TenantContextService } from "../../common/tenant-context";
+import { Injectable, NotFoundException, Inject } from "@nestjs/common";
+import { RlsPostgresService } from "../../database/rls-postgres.service";
+import { TenantSettings } from "@saas/types";
 
 export interface BrandingThemeTokens {
   cssVariables: Record<string, string>;
@@ -11,7 +11,9 @@ export interface BrandingThemeTokens {
 
 @Injectable()
 export class SettingsService {
-  constructor(@Inject(RlsPostgresService) private readonly rlsDb: RlsPostgresService) {}
+  constructor(
+    @Inject(RlsPostgresService) private readonly rlsDb: RlsPostgresService,
+  ) {}
 
   /**
    * Retrieves tenant settings and calculates design token CSS variables.
@@ -34,9 +36,9 @@ export class SettingsService {
     }
 
     const cssVariables = {
-      '--brand-primary': settings.primaryColor,
-      '--brand-accent': settings.accentColor,
-      '--theme-mode': settings.themeMode,
+      "--brand-primary": settings.primaryColor,
+      "--brand-accent": settings.accentColor,
+      "--theme-mode": settings.themeMode,
     };
 
     return { settings, cssVariables };
@@ -47,7 +49,16 @@ export class SettingsService {
    */
   async updateSettings(
     tenantId: string,
-    data: Partial<Pick<TenantSettings, 'logoUrl' | 'primaryColor' | 'accentColor' | 'themeMode' | 'customDomain'>>,
+    data: Partial<
+      Pick<
+        TenantSettings,
+        | "logoUrl"
+        | "primaryColor"
+        | "accentColor"
+        | "themeMode"
+        | "customDomain"
+      >
+    >,
   ): Promise<TenantSettings> {
     const updates: string[] = [];
     const params: unknown[] = [tenantId];
@@ -77,23 +88,32 @@ export class SettingsService {
     updates.push(`updated_at = NOW()`);
 
     const sql = `UPDATE tenant_settings
-                 SET ${updates.join(', ')}
+                 SET ${updates.join(", ")}
                  WHERE tenant_id = $1
                  RETURNING id, tenant_id as "tenantId", logo_url as "logoUrl",
                            primary_color as "primaryColor", accent_color as "accentColor",
                            theme_mode as "themeMode", custom_domain as "customDomain",
                            metadata, created_at as "createdAt", updated_at as "updatedAt"`;
 
-    return this.rlsDb.runInTenantContext(tenantId, async client => {
-    const res = await client.query<TenantSettings>(sql, params);
+    return this.rlsDb.runInTenantContext(tenantId, async (client) => {
+      const res = await client.query<TenantSettings>(sql, params);
 
-    if (!res.rows[0]) {
-      throw new NotFoundException(`Tenant settings not found for update`);
-    }
+      if (!res.rows[0]) {
+        throw new NotFoundException(`Tenant settings not found for update`);
+      }
 
-    await client.query(`INSERT INTO audit_logs (id,tenant_id,actor_id,action,resource_type,resource_id) VALUES ($1,$2,$3,$4,$5,$6)`,
-      [randomUUID(), tenantId, TenantContextService.get()?.user?.userId || null, 'settings.updated', 'settings', tenantId]);
-    return res.rows[0];
+      await client.query(
+        `INSERT INTO audit_logs (id,tenant_id,actor_id,action,resource_type,resource_id) VALUES ($1,$2,$3,$4,$5,$6)`,
+        [
+          randomUUID(),
+          tenantId,
+          TenantContextService.get()?.user?.userId || null,
+          "settings.updated",
+          "settings",
+          tenantId,
+        ],
+      );
+      return res.rows[0];
     });
   }
 }

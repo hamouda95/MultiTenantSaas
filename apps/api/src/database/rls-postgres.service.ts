@@ -102,6 +102,7 @@ export class RlsPostgresService implements OnModuleInit, OnModuleDestroy {
     if (this.inMemoryMode)
       return this.executeInMemoryTenantTransaction(null as any, callback);
     if (!this.adminPool) throw new Error("Database not initialized");
+    if (!this.adminPool) throw new Error("Database not initialized");
     const client = await this.adminPool.connect();
     try {
       await client.query("BEGIN");
@@ -138,10 +139,11 @@ export class RlsPostgresService implements OnModuleInit, OnModuleDestroy {
     tenantId: string,
     callback: (client: PoolClient) => Promise<T>,
   ): Promise<T> {
-    if (this.inMemoryMode || !this.appPool) {
+    if (this.inMemoryMode) {
       return this.executeInMemoryTenantTransaction(tenantId, callback);
     }
 
+    if (!this.appPool) throw new Error("Database not initialized");
     const client = await this.appPool.connect();
     try {
       await client.query("BEGIN;");
@@ -182,10 +184,11 @@ export class RlsPostgresService implements OnModuleInit, OnModuleDestroy {
     sql: string,
     params: unknown[] = [],
   ): Promise<QueryResult<R>> {
-    if (this.inMemoryMode || !this.adminPool) {
+    if (this.inMemoryMode) {
       return this.executeInMemoryAdminQuery(sql, params);
     }
 
+    if (!this.adminPool) throw new Error("Database not initialized");
     const client = await this.adminPool.connect();
     try {
       return await client.query<R>(sql, params);

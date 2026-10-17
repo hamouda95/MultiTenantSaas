@@ -56,7 +56,7 @@ describe.skipIf(!live)("Real PostgreSQL API and RLS integration", () => {
   beforeAll(async () => {
     // Use emitted decorator metadata from the real production build.
     const { AppModule } = await import("../dist/app.module.js" as string);
-    app = await NestFactory.create(AppModule, { logger: false });
+    app = await NestFactory.create(AppModule, { logger: ["error"] });
     await app.listen(0, "127.0.0.1");
     base = await app.getUrl();
   });
