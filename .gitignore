@@ -1,0 +1,46 @@
+# Dependencies & Stores
+node_modules/
+.pnpm-store/
+
+# Production & Build Artifacts
+dist/
+build/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+.turbo/
+
+# Environment Variables & Secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.cert
+*.crt
+*.pfx
+
+# Database & Storage Dumps
+*.dump
+*.sql.gz
+*.tar.gz
+
+# System & IDE
+.DS_Store
+*.log
+.vscode/
+.idea/
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# Dependencies and generated build files
+node_modules/
+.turbo/
+dist/
+build/
+*.tsbuildinfo
+.DS_Store
