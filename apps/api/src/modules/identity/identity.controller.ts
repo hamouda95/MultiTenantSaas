@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, UseGuards, UsePipes } from '@nestjs/common';
+import { Controller, Post, Get, Body, UseGuards, UsePipes, ForbiddenException } from '@nestjs/common';
 import { IdentityService } from './identity.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -13,6 +13,11 @@ export class IdentityController {
   @Post('login')
   @UsePipes(new ZodValidationPipe(LoginDtoSchema))
   async login(@Body() body: LoginDto) {
+    // The demo login does not verify passwords. Refuse access in production
+    // until a real authentication provider has been configured.
+    if (process.env.NODE_ENV === 'production') {
+      throw new ForbiddenException('Demo login is disabled in production. Configure a verified identity provider.');
+    }
     let user = await this.identityService.findByEmail(body.email);
     if (!user) {
       // In development / test environment, auto-provision user if does not exist
