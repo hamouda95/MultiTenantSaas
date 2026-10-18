@@ -133,6 +133,9 @@ export class RlsPostgresService implements OnModuleInit, OnModuleDestroy {
       r.rows.some((x) => !x.relrowsecurity || !x.relforcerowsecurity)
     )
       throw new Error("Required migrations or RLS missing");
+    await this.appPool.query(
+      "SELECT lifecycle_mode,lifecycle_version FROM tenants LIMIT 0",
+    );
     const data = await this.appPool.query(
       "SELECT tenant_id FROM business_ledgers LIMIT 1",
     );

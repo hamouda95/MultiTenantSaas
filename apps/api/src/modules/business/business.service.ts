@@ -71,8 +71,12 @@ export class BusinessService {
   ) {
     const { userId, owner } = this.identity(tenant);
     return this.db.runInTenantContext(tenant.tenantId, async (client) => {
+      await client.query(
+        "SELECT pg_advisory_xact_lock_shared(hashtextextended($1,0))",
+        [tenant.tenantId],
+      );
       const holding = await client.query(
-        "SELECT status FROM tenants WHERE id=$1 FOR SHARE",
+        "SELECT status FROM tenants WHERE id=$1",
         [tenant.tenantId],
       );
       if (holding.rows[0]?.status !== "ACTIVE")

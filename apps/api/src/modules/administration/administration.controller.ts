@@ -67,6 +67,10 @@ export class AdministrationController {
   ) {
     return this.db.runAdminTransaction(async (client) => {
       await this.authorize(client, id, user);
+      await client.query(
+        "SELECT pg_advisory_xact_lock(hashtextextended($1,0))",
+        [id],
+      );
       const r = await client.query(
         "SELECT * FROM tenants WHERE id=$1 FOR UPDATE",
         [id],
