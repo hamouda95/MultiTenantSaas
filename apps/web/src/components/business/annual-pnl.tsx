@@ -14,7 +14,7 @@ export function AnnualPnl({
     state.demoNotes?.[0]?.year || new Date().getFullYear(),
   );
   const companies = state.companies.filter(
-    (c) => (!companyId || c.id === companyId) && c.status !== "DELETED",
+    (c) => !companyId || c.id === companyId,
   );
   const currencies = [...new Set(companies.map((c) => c.currency))];
   const [chosen, setChosen] = useState("");
@@ -90,7 +90,52 @@ export function AnnualPnl({
     URL.revokeObjectURL(url);
   }
   return (
-    <section className="space-y-5 rounded-xl border border-border bg-surface p-5">
+    <section
+      data-pnl-report
+      className="space-y-5 rounded-xl border border-border bg-surface p-5"
+    >
+      <style jsx global>{`
+        @media print {
+          @page {
+            size: A3 landscape;
+            margin: 10mm;
+          }
+          body * {
+            visibility: hidden;
+          }
+          [data-pnl-report],
+          [data-pnl-report] * {
+            visibility: visible;
+          }
+          [data-pnl-report] {
+            position: absolute;
+            inset: 0 auto auto 0;
+            width: 100%;
+            padding: 0;
+            border: 0;
+            background: white;
+            color: black;
+          }
+          [data-pnl-report] .overflow-x-auto {
+            overflow: visible;
+          }
+          [data-pnl-report] table {
+            font-size: 8pt;
+            break-inside: avoid;
+          }
+          [data-pnl-report] th,
+          [data-pnl-report] td {
+            padding: 4px;
+          }
+          [data-pnl-report] input,
+          [data-pnl-report] select {
+            border: 0;
+          }
+          [data-pnl-report] button {
+            display: none;
+          }
+        }
+      `}</style>
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="mr-auto text-xl font-semibold">P&L annuel du holding</h2>
         <label>

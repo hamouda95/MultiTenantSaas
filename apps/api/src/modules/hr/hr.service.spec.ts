@@ -47,8 +47,7 @@ describe("HR tenant/company authorization", () => {
     state.access = [];
     db.queryInTenantContext.mockImplementation(
       async (_tenant: string, sql: string) => {
-        if (sql.includes("SELECT state FROM business_ledgers"))
-          return { rows: [{ state }] };
+        if (sql.includes("FROM business_ledgers")) return { rows: [{ state }] };
         if (sql.includes("SELECT 1 FROM hr_employees"))
           return { rows: [{ exists: 1 }] };
         if (
@@ -93,8 +92,7 @@ describe("HR tenant/company authorization", () => {
   it("rejects leave creation for a different employee", async () => {
     db.queryInTenantContext.mockImplementation(
       async (_tenant: string, sql: string) => {
-        if (sql.includes("SELECT state FROM business_ledgers"))
-          return { rows: [{ state }] };
+        if (sql.includes("FROM business_ledgers")) return { rows: [{ state }] };
         if (sql.includes("SELECT 1 FROM hr_employees"))
           return { rows: [{ exists: 1 }] };
         if (sql.includes("FROM hr_employees WHERE tenant_id"))

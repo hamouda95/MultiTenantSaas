@@ -30,7 +30,7 @@ export class HrService {
     if (!user?.userId) throw new ForbiddenException();
     const row = await this.db.queryInTenantContext(
       tenant.tenantId,
-      "SELECT state FROM business_ledgers WHERE tenant_id=$1",
+      "SELECT jsonb_build_object('companies',state->'companies','access',state->'access') AS state FROM business_ledgers WHERE tenant_id=$1",
       [tenant.tenantId],
     );
     const state = row.rows[0]?.state;
@@ -72,7 +72,7 @@ export class HrService {
     if (!user?.userId) throw new ForbiddenException();
     const ledger = await this.db.queryInTenantContext(
       tenant.tenantId,
-      "SELECT state FROM business_ledgers WHERE tenant_id=$1",
+      "SELECT jsonb_build_object('companies',state->'companies','access',state->'access') AS state FROM business_ledgers WHERE tenant_id=$1",
       [tenant.tenantId],
     );
     const state = ledger.rows[0]?.state;

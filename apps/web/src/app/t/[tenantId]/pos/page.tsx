@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { currencyDigits } from "@saas/types";
 import { CameraScanner } from "@/components/business/camera-scanner";
 import { ScanLine, Users, Receipt, Activity } from "lucide-react";
+import { versionedQuery } from "@/lib/versioned-query";
 import { api, ApiError } from "@/lib/api";
 import { PageHeader } from "@/components/app-shell";
 import { Card } from "@/components/ui/card";
@@ -18,7 +19,14 @@ export default function Pos() {
   const busyRef = useRef(false);
   const q = useQuery({
     queryKey: ["pos", tenantId],
-    queryFn: () => api.pos(tenantId),
+    queryFn: () =>
+      versionedQuery(
+        client,
+        ["pos", tenantId],
+        () => api.businessVersion(tenantId),
+        () => api.pos(tenantId),
+        () => busyRef.current,
+      ),
     refetchInterval: busyRef.current ? false : 5000,
     retry: false,
   });

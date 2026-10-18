@@ -13,6 +13,9 @@ export class BusinessController {
   @Get() snapshot(@CurrentTenant() tenant: TenantContext) {
     return this.business.snapshot(tenant);
   }
+  @Get("version") version(@CurrentTenant() tenant: TenantContext) {
+    return this.business.version(tenant);
+  }
   @Get("pos") pos(@CurrentTenant() tenant: TenantContext) {
     return this.business.pos(tenant);
   }

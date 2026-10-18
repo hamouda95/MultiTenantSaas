@@ -495,7 +495,7 @@ let failurePage;
   await page.getByLabel("Nom complet", { exact: true }).fill("Salarié Browser");
   await page.getByLabel("Poste", { exact: true }).fill("Vendeur");
   await page.getByLabel("Département", { exact: true }).fill("Ventes");
-  await page.getByLabel("Salaire brut (TND)", { exact: true }).fill("1000");
+  await page.getByLabel("Salaire brut (TND)", { exact: true }).fill("500");
   await page.getByLabel("Date d’entrée", { exact: true }).fill("2025-01-01");
   await page
     .getByRole("button", { name: "Ajouter un salarié", exact: true })
@@ -506,14 +506,14 @@ let failurePage;
     .click();
   await page.getByRole("button", { name: "Régler", exact: true }).waitFor();
   await page.getByRole("button", { name: "Régler", exact: true }).click();
-  await page.getByText(/1[\s\u00a0\u202f]?180.*Réglé/).waitFor();
+  await page.getByText(/590.*Réglé/).waitFor();
   await page.screenshot({
     path: "test-results/hr-desktop.png",
     fullPage: true,
   });
   response = await context.request.get(`/api/v1/tenants/${tenantId}/business`);
   snap = await response.json();
-  assert.equal(snap.state.payroll[0].total, 1180000);
+  assert.equal(snap.state.payroll[0].total, 590000);
   assert(snap.state.payroll[0].paidAt);
   await cmd({
     type: "product.create",

@@ -40,6 +40,7 @@ import {
   FinancingPanel,
 } from "@/components/business/purchasing-tools";
 import Link from "next/link";
+import { versionedQuery } from "@/lib/versioned-query";
 import { api, ApiError } from "@/lib/api";
 import { PageHeader } from "@/components/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -513,7 +514,14 @@ export default function BusinessPage() {
   const busyRef = useRef(false);
   const query = useQuery({
     queryKey: ["business", tenantId],
-    queryFn: () => api.business(tenantId),
+    queryFn: () =>
+      versionedQuery(
+        client,
+        ["business", tenantId],
+        () => api.businessVersion(tenantId),
+        () => api.business(tenantId),
+        () => busyRef.current,
+      ),
     refetchInterval: busyRef.current ? false : 5000,
     retry: false,
   });

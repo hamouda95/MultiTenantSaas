@@ -34,6 +34,26 @@ export class BusinessService {
         tenant.permissions.includes("hr:manage"),
     };
   }
+  async version(tenant: TenantContext) {
+    const { userId, owner } = this.identity(tenant);
+    const r = await this.db.queryInTenantContext(
+      tenant.tenantId,
+      "SELECT version FROM business_ledgers WHERE tenant_id=$1",
+      [tenant.tenantId],
+    );
+    const scopeTag = createHash("sha256")
+      .update(
+        JSON.stringify([
+          userId,
+          owner,
+          tenant.membershipId,
+          [...tenant.roles].sort(),
+          [...tenant.permissions].sort(),
+        ]),
+      )
+      .digest("hex");
+    return { version: Number(r.rows[0]?.version || 0), scopeTag };
+  }
   async snapshot(tenant: TenantContext) {
     const { userId, owner, hrAccess } = this.identity(tenant);
     const result = await this.db.queryInTenantContext(

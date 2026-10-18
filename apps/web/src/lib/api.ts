@@ -84,6 +84,11 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
 const t = (id: string) => `/api/v1/tenants/${encodeURIComponent(id)}`;
 
 export const api = {
+  businessVersion: (id: string) =>
+    request<{ version: number; scopeTag: string }>(
+      `${t(id)}/business/version`,
+      { tenantId: id },
+    ),
   hrCompanies: (id: string) =>
     request<Array<{ id: string; name: string; currency: string }>>(
       `${t(id)}/hr/companies`,
