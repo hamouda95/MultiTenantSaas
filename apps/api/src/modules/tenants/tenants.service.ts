@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   Injectable,
   NotFoundException,
@@ -65,7 +66,7 @@ export class TenantsService {
       throw new ConflictException(`Tenant slug '${slug}' is already in use`);
     }
 
-    const tenantId = `ten-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const tenantId = randomUUID();
 
     // 1. Create Tenant
     const tenantRes = await this.rlsDb.queryAdmin<Tenant>(
@@ -82,7 +83,7 @@ export class TenantsService {
       `INSERT INTO tenant_settings (id, tenant_id, primary_color, accent_color, theme_mode, metadata)
        VALUES ($1, $2, $3, '#2563EB', 'SYSTEM', '{}')
        RETURNING id, tenant_id as "tenantId", primary_color as "primaryColor", accent_color as "accentColor", theme_mode as "themeMode", metadata, created_at as "createdAt", updated_at as "updatedAt"`,
-      [`set-${tenantId}`, tenantId, primaryColor],
+      [randomUUID(), tenantId, primaryColor],
     );
     const settings = settingsRes.rows[0];
 
@@ -90,7 +91,7 @@ export class TenantsService {
     await this.rlsDb.queryAdmin<TenantQuota>(
       `INSERT INTO tenant_quotas (id, tenant_id, monthly_ai_token_budget, monthly_ai_cost_budget, max_members, max_storage_bytes)
        VALUES ($1, $2, 1000000, 50.00, 50, 10737418240)`,
-      [`qta-${tenantId}`, tenantId],
+      [randomUUID(), tenantId],
     );
 
     // 4. Create Data Placement
@@ -99,13 +100,13 @@ export class TenantsService {
       `INSERT INTO tenant_data_placements (id, tenant_id, placement_mode, schema_name, region)
        VALUES ($1, $2, $3, 'public', 'eu-central-1')
        RETURNING id, tenant_id as "tenantId", placement_mode as "placementMode", schema_name as "schemaName", region, created_at as "createdAt", updated_at as "updatedAt"`,
-      [`plc-${tenantId}`, tenantId, placementMode],
+      [randomUUID(), tenantId, placementMode],
     );
     const placement = placementRes.rows[0];
     this.placementRegistry.registerPlacement(placement);
 
     // 5. Create Default Owner Role & Assign Standard Permissions
-    const ownerRoleId = `rol-${tenantId}-owner`;
+    const ownerRoleId = randomUUID();
     await this.rlsDb.queryAdmin(
       `INSERT INTO roles (id, tenant_id, name, description, is_system_role)
        VALUES ($1, $2, 'Owner', 'Full tenant management and ownership rights', true)`,
@@ -114,7 +115,7 @@ export class TenantsService {
 
     // Seed permissions & link to Owner role
     for (const permKey of STANDARD_PERMISSIONS) {
-      const permId = `perm-${permKey.replace(':', '-')}`;
+      const permId = randomUUID();
       await this.rlsDb.queryAdmin(
         `INSERT INTO permissions (id, key, description)
          VALUES ($1, $2, $3)
@@ -131,7 +132,7 @@ export class TenantsService {
     }
 
     // Create Membership for creator
-    const membershipId = `mem-${tenantId}-${data.creatorUserId}`;
+    const membershipId = randomUUID();
     await this.rlsDb.queryAdmin(
       `INSERT INTO memberships (id, tenant_id, user_id, status)
        VALUES ($1, $2, $3, 'ACTIVE')`,
@@ -151,7 +152,7 @@ export class TenantsService {
       await this.rlsDb.queryAdmin(
         `INSERT INTO tenant_modules (id, tenant_id, module_key, is_enabled)
          VALUES ($1, $2, $3, true)`,
-        [`mod-${tenantId}-${mod}`, tenantId, mod],
+        [randomUUID(), tenantId, mod],
       );
     }
 
@@ -192,14 +193,14 @@ export class TenantsService {
     let userId = userRes.rows[0]?.id;
 
     if (!userId) {
-      userId = `usr-${Date.now()}`;
+      userId = randomUUID();
       await this.rlsDb.queryAdmin(
         `INSERT INTO users (id, email, full_name, status) VALUES ($1, $2, $3, 'ACTIVE')`,
         [userId, email.toLowerCase(), email.split('@')[0]],
       );
     }
 
-    const membershipId = `mem-${tenantId}-${userId}`;
+    const membershipId = randomUUID();
     await this.rlsDb.queryInTenantContext(
       tenantId,
       `INSERT INTO memberships (id, tenant_id, user_id, status)
@@ -216,7 +217,7 @@ export class TenantsService {
 
     let roleId = roleRes.rows[0]?.id;
     if (!roleId) {
-      roleId = `rol-${tenantId}-${roleName.toLowerCase()}`;
+      roleId = randomUUID();
       await this.rlsDb.queryInTenantContext(
         tenantId,
         `INSERT INTO roles (id, tenant_id, name, description, is_system_role)
