@@ -4,10 +4,16 @@ import { IdentityService } from './identity.service';
 import { IdentityController } from './identity.controller';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 
+function requiredJwtSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (!secret || secret.length < 32) throw new Error('JWT_SECRET must contain at least 32 characters');
+  return secret;
+}
+
 @Module({
   imports: [
     JwtModule.register({
-      secret: process.env.JWT_SECRET || 'dev_secret_key_change_in_production_32chars',
+      secret: requiredJwtSecret(),
       signOptions: { expiresIn: '24h' },
     }),
   ],
