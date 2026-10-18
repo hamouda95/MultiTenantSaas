@@ -99,7 +99,12 @@ export function CustomerOrders({
             </label>
             <label>
               Client
-              <select name="customer" required className={selectClass}>
+              <select
+                aria-label="Client de la commande"
+                name="customer"
+                required
+                className={selectClass}
+              >
                 {customers.map((x) => (
                   <option key={x.id} value={x.id}>
                     {x.name}
@@ -110,6 +115,7 @@ export function CustomerOrders({
             <label>
               Emplacement de préparation
               <select
+                aria-label="Emplacement de préparation"
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
                 className={selectClass}
@@ -251,6 +257,7 @@ export function CustomerOrders({
       <label>
         Afficher les commandes
         <select
+          aria-label="Afficher les commandes"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           className={selectClass}
