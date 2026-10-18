@@ -74,3 +74,7 @@ Document/AI permissions are reserved for future services; their presence does no
 ## Explicit boundaries
 
 AI chat execution, RAG ingestion, prediction, agents, NL-to-SQL, file storage and outbox delivery workers are not implemented in this repository. The module screen manages their entitlements only. Provider credentials alone will not add these services. Custom domains are saved metadata; DNS/TLS provisioning is external. Dedicated database routing is scaffolded but not connected to runtime queries, so production workspace creation rejects dedicated placement. Password reset and email ownership verification also require a mail/identity integration. Existing passwordless development accounts cannot log in until securely migrated by an operator; there is no email-only compatibility bypass.
+
+## Documentation administrateur en français
+
+Consultez le [guide administrateur](docs/fr/guide-administrateur.md) : accès par holding/société, limites actuelles, exports, suppression/archivage à développer et spécification de la future interface Caisse.
