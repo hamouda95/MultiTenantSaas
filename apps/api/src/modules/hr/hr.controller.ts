@@ -28,6 +28,14 @@ export class HrController {
   employees(@CurrentTenant() tenant: TenantContext, @Param("companyId") companyId: string) {
     return this.hr.employees(tenant, companyId);
   }
+  @Get("contracts")
+  contracts(@CurrentTenant() tenant: TenantContext, @Param("companyId") companyId: string) {
+    return this.hr.contracts(tenant, companyId);
+  }
+  @Get("leave")
+  leaves(@CurrentTenant() tenant: TenantContext, @Param("companyId") companyId: string) {
+    return this.hr.leaves(tenant, companyId);
+  }
   @Post("employees")
   createEmployee(@CurrentTenant() tenant: TenantContext, @Param("companyId") companyId: string,
     @Body(new ZodValidationPipe(employee)) body: z.infer<typeof employee>) {
