@@ -23,8 +23,6 @@ export default function ExecutiveDashboard() {
     company, metrics: companyMetrics(data.state, company),
     stores: data.state.locations.filter((l) => l.companyId === company.id && l.kind === "STORE").length,
   })) ?? [], [data]);
-  if (isLoading) return <p role="status" className="text-muted">Chargement des indicateurs…</p>;
-  if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
   const currencies = new Set(companies.map((x) => x.company.currency));
   const commonCurrency = currencies.size === 1 ? companies[0]?.company.currency : null;
   const [selectedCompany, setSelectedCompany] = useState("");
@@ -38,7 +36,7 @@ export default function ExecutiveDashboard() {
         m.revenue, m.costOfGoodsSold, m.grossProfit, m.operatingExpenses, m.operatingContribution].map(String)),
     ];
     const escapeCsv = (value: string) => '"' + value.replace(/"/g, '""') + '"';
-    const csv = "\\uFEFF" + rows.map((row) => row.map((value) => escapeCsv(String(value))).join(";")).join("\\r\\n");
+    const csv = "\uFEFF" + rows.map((row) => row.map((value) => escapeCsv(String(value))).join(";")).join("\r\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -49,6 +47,8 @@ export default function ExecutiveDashboard() {
   };
   const total = (key: keyof ReturnType<typeof companyMetrics>) =>
     companies.reduce((sum, x) => sum + x.metrics[key], 0);
+  if (isLoading) return <p role="status" className="text-muted">Chargement des indicateurs…</p>;
+  if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
   return (
     <div className="space-y-6">
       <PageHeader title="Pilotage CEO / CFO" description="Vue des sociétés accessibles dans ce holding. Indicateurs calculés à partir des opérations enregistrées, sans données simulées." />
