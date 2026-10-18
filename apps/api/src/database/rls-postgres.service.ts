@@ -35,13 +35,11 @@ export class RlsPostgresService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async initializePools() {
-    const appDatabaseUrl =
-      process.env.DATABASE_URL ||
-      'postgresql://saas_app_user:app_secure_password_123@localhost:5432/saas_production?schema=public';
-
-    const adminDatabaseUrl =
-      process.env.DATABASE_MIGRATION_URL ||
-      'postgresql://saas_admin:admin_master_password_456@localhost:5432/saas_production?schema=public';
+    const appDatabaseUrl = process.env.DATABASE_URL;
+    const adminDatabaseUrl = process.env.DATABASE_MIGRATION_URL;
+    if (!appDatabaseUrl || !adminDatabaseUrl) {
+      throw new Error('DATABASE_URL and DATABASE_MIGRATION_URL are required');
+    }
 
     try {
       this.appPool = new Pool({
@@ -63,11 +61,9 @@ export class RlsPostgresService implements OnModuleInit, OnModuleDestroy {
       client.release();
       this.isConnected = true;
       this.logger.log('Connected successfully to PostgreSQL instance with RLS support');
-    } catch {
-      this.logger.warn(
-        'PostgreSQL instance not immediately reachable at startup. Activating resilient in-memory verification engine for isolated testing.',
-      );
-      this.inMemoryMode = true;
+    } catch (error) {
+      this.logger.error('PostgreSQL connection failed; refusing to start without persistence');
+      throw error;
     }
   }
 
@@ -89,14 +85,18 @@ export class RlsPostgresService implements OnModuleInit, OnModuleDestroy {
     tenantId: string,
     callback: (client: PoolClient) => Promise<T>,
   ): Promise<T> {
-    if (this.inMemoryMode || !this.appPool) {
+    if (!this.inMemoryMode && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) {
+      throw new Error('Valid tenant UUID required');
+    }
+    if (this.inMemoryMode) {
       return this.executeInMemoryTenantTransaction(tenantId, callback);
     }
 
+    if (!this.appPool) throw new Error('Database not initialized');
     const client = await this.appPool.connect();
     try {
       await client.query('BEGIN;');
-      await client.query('SET LOCAL app.current_tenant_id = $1;', [tenantId]);
+      await client.query("SELECT set_config('app.current_tenant_id', $1, true)", [tenantId]);
 
       const result = await callback(client);
 
@@ -130,10 +130,11 @@ export class RlsPostgresService implements OnModuleInit, OnModuleDestroy {
     sql: string,
     params: unknown[] = [],
   ): Promise<QueryResult<R>> {
-    if (this.inMemoryMode || !this.adminPool) {
+    if (this.inMemoryMode) {
       return this.executeInMemoryAdminQuery(sql, params);
     }
 
+    if (!this.adminPool) throw new Error('Admin database not initialized');
     const client = await this.adminPool.connect();
     try {
       return await client.query<R>(sql, params);
