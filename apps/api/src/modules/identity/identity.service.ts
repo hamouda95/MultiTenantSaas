@@ -1,9 +1,18 @@
 import { Injectable, UnauthorizedException, Inject } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
+import { promisify } from 'node:util';
+const scrypt = promisify(scryptCallback);
 import { RlsPostgresService } from '../../database/rls-postgres.service';
 import { User, AuthenticatedUserContext } from '@saas/types';
 
 @Injectable()
+function requiredJwtSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (!secret || secret.length < 32) throw new Error('JWT_SECRET must contain at least 32 characters');
+  return secret;
+}
+
 export class IdentityService {
   constructor(
     @Inject(RlsPostgresService) private readonly rlsDb: RlsPostgresService,
@@ -22,9 +31,23 @@ export class IdentityService {
     };
 
     return this.jwtService.signAsync(payload, {
-      secret: process.env.JWT_SECRET || 'dev_secret_key_change_in_production_32chars',
+      secret: requiredJwtSecret(),
       expiresIn: '24h',
     });
+  }
+
+  async verifyPassword(userId: string, password: string): Promise<boolean> {
+    const result = await this.rlsDb.queryAdmin<{ password_hash: string | null; status: string }>(
+      'SELECT password_hash, status FROM users WHERE id = $1', [userId],
+    );
+    const record = result.rows[0];
+    if (!record || record.status !== 'ACTIVE' || !record.password_hash) return false;
+    const [algorithm, salt, encoded] = record.password_hash.split(':');
+    if (algorithm !== 'scrypt' || !salt || !encoded) return false;
+    const expected = Buffer.from(encoded, 'hex');
+    if (expected.length !== 64) return false;
+    const actual = (await scrypt(password, salt, 64)) as Buffer;
+    return timingSafeEqual(actual, expected);
   }
 
   /**
@@ -67,7 +90,7 @@ export class IdentityService {
     fullName: string;
     isPlatformAdmin?: boolean;
   }): Promise<User> {
-    const userId = data.id || `usr-${Date.now()}`;
+    const userId = data.id || randomUUID();
     const result = await this.rlsDb.queryAdmin<User>(
       `INSERT INTO users (id, email, full_name, is_platform_admin, status)
        VALUES ($1, $2, $3, $4, 'ACTIVE')
