@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { BadRequestException, ForbiddenException } from "@nestjs/common";
-import { accountBalance, productStock } from "@saas/types";
+import { accountBalance, productStock, availableStock } from "@saas/types";
 import type { BusinessState, PosSession, PosSnapshot } from "@saas/types";
 import type { BusinessAction } from "./business.schema";
 const fail = (m: string): never => {
@@ -117,7 +117,7 @@ export function posSnapshot(
             productId: p.id,
             locationId: l.id,
             locationName: l.name,
-            quantity: productStock(s, p.id, l.id),
+            quantity: availableStock(s, p.id, l.id),
           })),
       ),
     sessions: (s.posSessions || [])
@@ -312,7 +312,7 @@ export function applyPos(
               (p) => p.id === l.productId && p.companyId === a.companyId,
             );
             if (!p?.salePrice) fail("Produit sans tarif");
-            if (productStock(s, l.productId, locationId) < l.quantity)
+            if (availableStock(s, l.productId, locationId) < l.quantity)
               fail("Stock insuffisant");
             return {
               productId: l.productId,

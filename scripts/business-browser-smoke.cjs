@@ -797,6 +797,87 @@ let failurePage;
     path: "test-results/erp-group-mobile.png",
     fullPage: true,
   });
+  // Customer order: create/reserve/partially deliver/cancel remainder through actual UI.
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto(`/t/${tenantId}/business`);
+  await allSpaces();
+  await page.getByLabel("Société", { exact: true }).selectOption(companyId);
+  await page
+    .getByRole("button", { name: "Commandes clients", exact: true })
+    .click();
+  await page
+    .getByLabel("Référence commande client", { exact: true })
+    .fill("CO-BROWSER");
+  await page
+    .getByLabel("Emplacement de préparation", { exact: true })
+    .selectOption(warehouseId);
+  await page
+    .getByLabel("Article commande 1", { exact: true })
+    .selectOption(productId);
+  await page.getByLabel("Quantité commande 1", { exact: true }).fill("3");
+  await page.getByLabel("Prix commande 1", { exact: true }).fill("2");
+  await page
+    .getByLabel("Échéance de paiement", { exact: true })
+    .fill("2026-11-01");
+  await page
+    .getByRole("button", { name: "Créer le brouillon client", exact: true })
+    .click();
+  await page
+    .getByRole("heading", { name: "CO-BROWSER · Brouillon", exact: true })
+    .waitFor();
+  await page
+    .getByRole("button", { name: "Confirmer et réserver", exact: true })
+    .click();
+  await page
+    .getByRole("heading", { name: "CO-BROWSER · Réservée", exact: true })
+    .waitFor();
+  await page
+    .getByLabel("Référence bon de livraison", { exact: true })
+    .fill("DELIVERY-BROWSER");
+  await page.getByLabel("À livrer SHOE-42-BLACK", { exact: true }).fill("1");
+  await page
+    .getByRole("button", { name: "Valider la livraison", exact: true })
+    .click();
+  await page
+    .getByRole("heading", {
+      name: "CO-BROWSER · Partiellement livrée",
+      exact: true,
+    })
+    .waitFor();
+  response = await context.request.get(`/api/v1/tenants/${tenantId}/business`);
+  snap = await response.json();
+  assert.equal(
+    snap.state.invoices.find((i) => i.reference === "SALE:BL:DELIVERY-BROWSER")
+      .amount,
+    2000,
+  );
+  await page.screenshot({
+    path: "test-results/customer-orders-desktop.png",
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth > innerWidth,
+    ),
+    false,
+  );
+  await page.screenshot({
+    path: "test-results/customer-orders-mobile.png",
+    fullPage: true,
+  });
+  await page
+    .getByLabel("Motif annulation CO-BROWSER", { exact: true })
+    .fill("Customer cancelled remainder");
+  await page
+    .getByRole("button", { name: "Annuler le reliquat", exact: true })
+    .click();
+  await page
+    .getByLabel("Afficher les commandes", { exact: true })
+    .selectOption("ALL");
+  await page
+    .getByRole("heading", { name: "CO-BROWSER · Annulée", exact: true })
+    .waitFor();
   await page.goto("/administration");
   await page
     .getByRole("heading", { name: "Administration des holdings", exact: true })

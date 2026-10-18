@@ -116,6 +116,62 @@ function fixture() {
   };
 }
 describe("Store POS security and lifecycle", () => {
+  it("excludes reserved articles from availability and rejects checkout of promised quantities", () => {
+    const f = fixture();
+    f.cmd({
+      type: "customerOrder.create",
+      reference: "CO-POS",
+      customerId: f.s.partners[0].id,
+      locationId: f.storeId,
+      dueDate: "2026-11-01",
+      lines: [{ productId: f.productId, quantity: 9, unitPrice: 1000 }],
+    });
+    f.cmd({
+      type: "customerOrder.confirm",
+      orderId: f.s.customerOrders![0].id,
+    });
+    expect(
+      posSnapshot(f.s, 1, cashier, false, membership).availability.find(
+        (x) => x.productId === f.productId && x.locationId === f.storeId,
+      )!.quantity,
+    ).toBe(1);
+    f.cmd(
+      { type: "pos.open", locationId: f.storeId, opening: 0 },
+      cashier,
+      false,
+    );
+    const sessionId = f.s.posSessions![0].id;
+    expect(() =>
+      f.cmd(
+        {
+          type: "pos.checkout",
+          sessionId,
+          items: [{ productId: f.productId, quantity: 2 }],
+          discountBps: 0,
+          cash: 2000,
+          card: 0,
+          cashGiven: 2000,
+        },
+        cashier,
+        false,
+      ),
+    ).toThrow();
+    f.cmd(
+      {
+        type: "pos.checkout",
+        sessionId,
+        items: [{ productId: f.productId, quantity: 1 }],
+        discountBps: 0,
+        cash: 1000,
+        card: 0,
+        cashGiven: 1000,
+      },
+      cashier,
+      false,
+    );
+    expect(f.s.sales).toHaveLength(1);
+  });
+
   it("redacts finances, restricts stores and permits same-company stock lookup", () => {
     const f = fixture(),
       view = posSnapshot(f.s, 1, cashier, false, membership);

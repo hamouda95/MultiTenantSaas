@@ -1266,6 +1266,118 @@ describe.skipIf(!live)("Real PostgreSQL API and RLS integration", () => {
         [ic.receivableId, ic.payableId].includes(p.invoiceId),
       ),
     ).toHaveLength(2);
+
+    // Real HTTP/PG: reservations persist, role-scoped delivery creates one receivable.
+    await command({
+      type: "partner.create",
+      companyId: a,
+      name: "ERP Client",
+      kind: "CUSTOMER",
+      email: "",
+    });
+    const clientId = snap.state.partners.at(-1).id;
+    expect(
+      (
+        await command({
+          type: "customerOrder.create",
+          companyId: a,
+          reference: "ERP-CO",
+          customerId: clientId,
+          locationId: wh,
+          dueDate: "2026-11-01",
+          lines: [{ productId: p, quantity: 3, unitPrice: 2000 }],
+        })
+      ).status,
+    ).toBe(201);
+    const co = snap.state.customerOrders.at(-1).id;
+    await command({ type: "customerOrder.confirm", companyId: a, orderId: co });
+    expect(
+      (
+        await command({
+          type: "stock.adjust",
+          companyId: a,
+          productId: p,
+          locationId: wh,
+          quantity: -2,
+          unitCost: 0,
+          reason: "Reserved",
+        })
+      ).status,
+    ).toBe(400);
+    await command({
+      type: "access.grant",
+      companyId: a,
+      userId,
+      role: "WAREHOUSE",
+    });
+    expect(
+      (
+        await command(
+          {
+            type: "customerOrder.cancel",
+            companyId: a,
+            orderId: co,
+            reason: "Not permitted",
+          },
+          viewerCookie,
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await command(
+          {
+            type: "customerOrder.deliver",
+            companyId: a,
+            orderId: co,
+            reference: "ERP-DELIVERY",
+            lines: [{ productId: p, quantity: 1 }],
+          },
+          viewerCookie,
+        )
+      ).status,
+    ).toBe(201);
+    expect(
+      snap.state.customerOrders.find((o: { id: string }) => o.id === co)
+        .lines[0].unitPrice,
+    ).toBe(0);
+    expect(
+      snap.state.invoices.filter(
+        (i: { companyId: string }) => i.companyId === a,
+      ),
+    ).toHaveLength(0);
+    snap = (
+      await request(`/tenants/${tenantId}/business`, { cookie: ownerCookie })
+    ).body;
+    expect(
+      snap.state.customerOrders.find((o: { id: string }) => o.id === co).status,
+    ).toBe("PARTIALLY_DELIVERED");
+    expect(
+      snap.state.invoices.find(
+        (i: { reference: string }) => i.reference === "SALE:BL:ERP-DELIVERY",
+      ).amount,
+    ).toBe(2000);
+    expect(
+      (
+        await command({
+          type: "customerOrder.deliver",
+          companyId: a,
+          orderId: co,
+          reference: "ERP-DELIVERY",
+          lines: [{ productId: p, quantity: 1 }],
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await command({
+          type: "customerOrder.cancel",
+          companyId: a,
+          orderId: co,
+          reason: "Remainder cancelled",
+        })
+      ).status,
+    ).toBe(201);
   });
   it("revokes logged-out sessions server-side", async () => {
     expect(

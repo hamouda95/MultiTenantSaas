@@ -162,6 +162,8 @@ export interface BusinessEvent {
   reference: string;
 }
 export interface BusinessState {
+  customerOrders?: CustomerOrder[];
+  customerDeliveries?: CustomerDelivery[];
   receipts?: PurchaseReceipt[];
   transfers?: StockTransfer[];
   intercompany?: IntercompanyCharge[];
@@ -393,4 +395,30 @@ export interface IntercompanyCharge {
   date: string;
   receivableId: string;
   payableId: string;
+}
+
+export interface CustomerOrder {
+  id: string;
+  companyId: string;
+  reference: string;
+  customerId: string;
+  locationId: string;
+  lines: BusinessLine[];
+  dueDate: string;
+  createdAt: string;
+  status:
+    "DRAFT" | "CONFIRMED" | "PARTIALLY_DELIVERED" | "DELIVERED" | "CANCELLED";
+  confirmedAt?: string;
+  cancelledAt?: string;
+  cancellationReason?: string;
+}
+export interface CustomerDelivery {
+  id: string;
+  companyId: string;
+  orderId: string;
+  reference: string;
+  lines: { productId: string; quantity: number }[];
+  saleId: string;
+  invoiceId: string;
+  date: string;
 }

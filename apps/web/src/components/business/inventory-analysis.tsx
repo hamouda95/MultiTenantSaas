@@ -174,15 +174,15 @@ export function InventoryAnalysis({
           </div>
           {!total && (
             <p className="text-sm text-muted">
-              Aucun stock disponible pour ce modèle dans ce périmètre.
+              Aucun stock physique pour ce modèle dans ce périmètre.
             </p>
           )}
         </>
       )}
       <p className="text-xs text-muted">
-        Seuls les mouvements validés sont comptés. Une commande en cours n’est
-        pas disponible à la vente. Pas de réservation ni de stock en transit
-        dans ce compteur.
+        Ce compteur représente le stock physique, réservations incluses et
+        transit exclu. Le disponible à la vente déduit les réservations clients
+        confirmées ; consultez « Commandes clients » pour le détail.
       </p>
     </Card>
   );

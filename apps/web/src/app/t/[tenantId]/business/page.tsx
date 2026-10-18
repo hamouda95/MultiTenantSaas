@@ -33,6 +33,7 @@ import type { BusinessState, BusinessCompany, BusinessLine } from "@saas/types";
 import { GroupDashboard } from "@/components/business/group-dashboard";
 import { IntercompanyPanel } from "@/components/business/intercompany-panel";
 import { ReceivingPanel } from "@/components/business/receiving-panel";
+import { CustomerOrders } from "@/components/business/customer-orders";
 import { TransferPanel } from "@/components/business/transfer-panel";
 import { AnnualPnl } from "@/components/business/annual-pnl";
 import { HrPanel } from "@/components/business/hr-panel";
@@ -82,6 +83,7 @@ const statusLabels: Record<string, string> = {
 const tabs = [
   ["group", "Pilotage groupe"],
   ["receipts", "Réceptions fournisseurs"],
+  ["customerOrders", "Commandes clients"],
   ["transfers", "Transferts suivis"],
   ["intercompany", "Intragroupe"],
   ["overview", "Vue holding"],
@@ -679,19 +681,33 @@ export default function BusinessPage() {
     {
       id: "logistique",
       name: "Entrepôts & logistique",
-      views: ["receipts", "transfers", "inventory", "intelligence", "catalog"],
+      views: [
+        "receipts",
+        "customerOrders",
+        "transfers",
+        "inventory",
+        "intelligence",
+        "catalog",
+      ],
       allowed: has(["MANAGER", "OPERATIONS", "WAREHOUSE"]),
     },
     {
       id: "ventes",
       name: "Ventes & magasins",
-      views: ["sales", "inventory", "catalog"],
+      views: ["customerOrders", "sales", "inventory", "catalog"],
       allowed: has(["MANAGER", "OPERATIONS"]),
     },
     {
       id: "finance",
       name: "Finance & trésorerie",
-      views: ["finance", "intercompany", "group", "pnl", "purchasing"],
+      views: [
+        "finance",
+        "customerOrders",
+        "intercompany",
+        "group",
+        "pnl",
+        "purchasing",
+      ],
       allowed: has(["MANAGER", "FINANCE"]),
     },
     {
@@ -997,6 +1013,26 @@ export default function BusinessPage() {
           busy={busy}
           run={run}
         />
+      )}
+      {company && activeTab === "customerOrders" && (
+        <CustomerOrders
+          key={company.id}
+          state={s}
+          company={company}
+          prices={!["WAREHOUSE", "BUYER", "HR"].includes(role || "")}
+          create={operate && enabled("sales")}
+          deliver={
+            warehousing &&
+            enabled("sales") &&
+            enabled("inventory") &&
+            enabled("finance")
+          }
+          busy={busy}
+          run={run}
+        />
+      )}
+      {!company && activeTab === "customerOrders" && (
+        <p>Sélectionnez une société pour ouvrir les commandes clients.</p>
       )}
       {company && activeTab === "transfers" && (
         <TransferPanel

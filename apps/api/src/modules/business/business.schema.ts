@@ -57,6 +57,54 @@ export const BusinessCommandSchema = z
     action: z.discriminatedUnion("type", [
       z
         .object({
+          type: z.literal("customerOrder.create"),
+          companyId: id,
+          reference: text,
+          customerId: id,
+          locationId: id,
+          lines,
+          dueDate: date,
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("customerOrder.confirm"),
+          companyId: id,
+          orderId: id,
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("customerOrder.cancel"),
+          companyId: id,
+          orderId: id,
+          reason: text,
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("customerOrder.deliver"),
+          companyId: id,
+          orderId: id,
+          reference: text,
+          lines: z
+            .array(
+              z
+                .object({
+                  productId: id,
+                  quantity: z.number().int().min(1).max(1000000),
+                })
+                .strict(),
+            )
+            .min(1)
+            .max(100)
+            .refine(
+              (v) => new Set(v.map((x) => x.productId)).size === v.length,
+            ),
+        })
+        .strict(),
+      z
+        .object({
           type: z.literal("order.receive"),
           companyId: id,
           orderId: id,

@@ -3,6 +3,8 @@ import {
   financingOutstanding,
   payrollCashFlow,
   orderReceived,
+  availableStock,
+  customerDelivered,
 } from "@saas/types";
 import { applyPos } from "./pos.engine";
 import { randomUUID } from "node:crypto";
@@ -233,6 +235,11 @@ export function visibleBusiness(
         }
       : x,
   );
+  result.customerOrders = (result.customerOrders || []).map((o) =>
+    restricted.has(o.companyId)
+      ? { ...o, lines: o.lines.map((l) => ({ ...l, unitPrice: 0 })) }
+      : o,
+  );
   result.orders = result.orders.map((o) =>
     warehouse.has(o.companyId)
       ? {
@@ -267,6 +274,8 @@ export function visibleBusiness(
     "products",
     "partners",
     "orders",
+    "customerOrders",
+    "customerDeliveries",
     "receipts",
     "transfers",
     "sales",
@@ -430,6 +439,7 @@ export function applyBusiness(
       "stock.ship",
       "stock.receiveTransfer",
       "stock.transfer",
+      "customerOrder.deliver",
     ].includes(a.type) &&
     !(a.type === "order.transition" && a.status === "RECEIVED")
   )
@@ -469,7 +479,7 @@ export function applyBusiness(
       ? "purchasing"
       : a.type.startsWith("stock.")
         ? "inventory"
-        : a.type.startsWith("sale.")
+        : a.type.startsWith("sale.") || a.type.startsWith("customerOrder.")
           ? "sales"
           : finance.includes(a.type)
             ? "finance"
@@ -485,6 +495,7 @@ export function applyBusiness(
       throw new NotFoundException("Référence introuvable dans cette société");
     return item;
   };
+  let reservationOrderId: string | undefined;
   const movement = (
     productId: string,
     locationId: string,
@@ -494,8 +505,12 @@ export function applyBusiness(
   ) => {
     own(s.products, productId);
     own(s.locations, locationId);
-    if (stock(s, productId, locationId) + quantity < 0)
-      fail("Stock insuffisant");
+    if (
+      quantity < 0 &&
+      availableStock(s, productId, locationId, reservationOrderId) + quantity <
+        0
+    )
+      fail("Stock insuffisant : disponible après réservations clients");
     s.movements.push({
       id: randomUUID(),
       companyId,
@@ -1133,6 +1148,119 @@ export function applyBusiness(
       if (a.fromId === a.toId) fail("Choisissez deux emplacements différents");
       movement(a.productId, a.fromId, -a.quantity, "TRANSFER", id);
       movement(a.productId, a.toId, a.quantity, "TRANSFER", id);
+      break;
+    }
+    case "customerOrder.create": {
+      referenceUnique(a.reference, s.customerOrders || []);
+      if (own(s.partners, a.customerId).kind !== "CUSTOMER")
+        fail("Client requis");
+      own(s.locations, a.locationId);
+      a.lines.forEach((l) => own(s.products, l.productId));
+      if (totalLines(a.lines) <= 0) fail("Commande sans montant positif");
+      (s.customerOrders ||= []).push({
+        ...a,
+        id,
+        status: "DRAFT",
+        createdAt: now,
+      });
+      break;
+    }
+    case "customerOrder.confirm": {
+      if (!company.modules.includes("inventory"))
+        fail("Activez le stock avant réservation");
+      const o = own(s.customerOrders || [], a.orderId);
+      if (o.status !== "DRAFT") fail("Commande déjà confirmée ou clôturée");
+      for (const l of o.lines)
+        if (availableStock(s, l.productId, o.locationId) < l.quantity)
+          fail("Stock insuffisant pour réserver toutes les lignes");
+      o.status = "CONFIRMED";
+      o.confirmedAt = now;
+      break;
+    }
+    case "customerOrder.cancel": {
+      const o = own(s.customerOrders || [], a.orderId);
+      if (["DELIVERED", "CANCELLED"].includes(o.status))
+        fail("Commande déjà clôturée");
+      o.status = "CANCELLED";
+      o.cancelledAt = now;
+      o.cancellationReason = a.reason;
+      break;
+    }
+    case "customerOrder.deliver": {
+      if (
+        !company.modules.includes("inventory") ||
+        !company.modules.includes("finance")
+      )
+        fail("Activez stock et finance pour livrer");
+      const o = own(s.customerOrders || [], a.orderId);
+      if (!["CONFIRMED", "PARTIALLY_DELIVERED"].includes(o.status))
+        fail("Commande non livrable");
+      referenceUnique(a.reference, s.customerDeliveries || []);
+      const saleReference = `BL:${a.reference}`;
+      referenceUnique(saleReference, s.sales);
+      referenceUnique(`SALE:${saleReference}`, s.invoices);
+      const lines = a.lines.map((l) => {
+        const original = o.lines.find((x) => x.productId === l.productId);
+        if (
+          !original ||
+          l.quantity >
+            original.quantity - customerDelivered(s, o.id, l.productId)
+        )
+          fail("Quantité supérieure au reliquat ou variante étrangère");
+        if (availableStock(s, l.productId, o.locationId, o.id) < l.quantity)
+          fail("Stock réservé indisponible");
+        return { ...l, unitPrice: original!.unitPrice };
+      });
+      const total = totalLines(lines);
+      if (total <= 0) fail("Livraison sans montant positif");
+      const unitCosts: Record<string, number> = {};
+      let cost = 0;
+      reservationOrderId = o.id;
+      for (const l of lines) {
+        unitCosts[l.productId] = own(s.products, l.productId).cost;
+        cost = safe(cost + safe(unitCosts[l.productId] * l.quantity));
+        movement(l.productId, o.locationId, -l.quantity, "SALE", id);
+      }
+      const invoiceId = randomUUID();
+      s.sales.push({
+        id,
+        companyId,
+        reference: saleReference,
+        customerId: o.customerId,
+        locationId: o.locationId,
+        lines,
+        unitCosts,
+        cost,
+        total,
+        returned: false,
+        date: now,
+      });
+      s.invoices.push({
+        id: invoiceId,
+        companyId,
+        kind: "RECEIVABLE",
+        reference: `SALE:${saleReference}`,
+        partnerId: o.customerId,
+        amount: total,
+        dueDate: o.dueDate,
+        sourceId: id,
+        createdAt: now,
+      });
+      (s.customerDeliveries ||= []).push({
+        id: randomUUID(),
+        companyId,
+        orderId: o.id,
+        reference: a.reference,
+        lines: a.lines,
+        saleId: id,
+        invoiceId,
+        date: now,
+      });
+      o.status = o.lines.every(
+        (l) => customerDelivered(s, o.id, l.productId) === l.quantity,
+      )
+        ? "DELIVERED"
+        : "PARTIALLY_DELIVERED";
       break;
     }
     case "sale.create": {

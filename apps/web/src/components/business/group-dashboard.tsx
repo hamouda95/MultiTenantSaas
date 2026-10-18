@@ -71,6 +71,18 @@ export function GroupDashboard({
         label: `À réceptionner · ${o.reference}`,
         view: "receipts",
       })),
+    ...(s.customerOrders || [])
+      .filter(
+        (o) =>
+          ids.has(o.companyId) &&
+          ["CONFIRMED", "PARTIALLY_DELIVERED"].includes(o.status),
+      )
+      .map((o) => ({
+        id: o.id,
+        companyId: o.companyId,
+        label: `À livrer · ${o.reference}`,
+        view: "customerOrders",
+      })),
     ...(s.transfers || [])
       .filter((t) => ids.has(t.companyId) && t.status === "IN_TRANSIT")
       .map((t) => ({

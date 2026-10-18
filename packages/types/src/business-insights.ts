@@ -173,7 +173,7 @@ export function replenishment(
   );
   const result: ReplenishmentSuggestion[] = [];
   for (const product of s.products.filter((p) => p.companyId === c.id)) {
-    let available = productStock(s, product.id, warehouseId);
+    let available = availableStock(s, product.id, warehouseId);
     const rows = stores
       .map((store) => {
         const history = sales.filter(
@@ -600,4 +600,60 @@ export function groupAnnual(
     grossMargin: total.grossMargin - elimination,
   };
   return { companies, total, elimination, consolidated };
+}
+
+/** Reservations reduce sellable stock, never physical ownership or valuation. */
+export function customerDelivered(
+  s: BusinessState,
+  orderId: string,
+  productId: string,
+) {
+  return (s.customerDeliveries || [])
+    .filter((d) => d.orderId === orderId)
+    .reduce(
+      (n, d) =>
+        n +
+        d.lines
+          .filter((l) => l.productId === productId)
+          .reduce((a, l) => a + l.quantity, 0),
+      0,
+    );
+}
+export function reservedStock(
+  s: BusinessState,
+  productId: string,
+  locationId?: string,
+  exceptOrderId?: string,
+) {
+  return (s.customerOrders || [])
+    .filter(
+      (o) =>
+        o.id !== exceptOrderId &&
+        ["CONFIRMED", "PARTIALLY_DELIVERED"].includes(o.status) &&
+        (!locationId || o.locationId === locationId),
+    )
+    .reduce(
+      (n, o) =>
+        n +
+        o.lines
+          .filter((l) => l.productId === productId)
+          .reduce(
+            (a, l) =>
+              a +
+              Math.max(0, l.quantity - customerDelivered(s, o.id, productId)),
+            0,
+          ),
+      0,
+    );
+}
+export function availableStock(
+  s: BusinessState,
+  productId: string,
+  locationId?: string,
+  exceptOrderId?: string,
+) {
+  return (
+    productStock(s, productId, locationId) -
+    reservedStock(s, productId, locationId, exceptOrderId)
+  );
 }
