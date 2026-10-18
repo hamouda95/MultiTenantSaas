@@ -11,6 +11,22 @@ NestJS 11 + Next.js 15 workspace application with the uploaded Claude interface,
 - Persist branding, logo URL, theme and domain metadata; enable/disable supported module entitlements; view immutable audit history.
 - Route/header tenant matching, membership checks, RBAC, transaction-local RLS and composite foreign keys protect tenant boundaries.
 
+## Run the real app on your MacBook
+
+Install and open [Docker Desktop for Mac](https://docs.docker.com/desktop/setup/install/mac-install/), then run:
+
+```sh
+git clone --branch feat/claude-frontend-integration https://github.com/hamouda95/MultiTenantSaas.git
+cd MultiTenantSaas
+./scripts/local.sh
+```
+
+Open **http://localhost:3000** and choose **Créer un compte**. This runs the actual frontend, NestJS API and PostgreSQL locally. Node.js and pnpm do not need to be installed on your Mac. The first build can take several minutes.
+
+The launcher generates independent credentials in ignored `.env.local-docker`, uses a separate local Docker project/volume, and opens the app on macOS. Keep that file: restarting reuses it and your database. `./scripts/local.sh stop` stops the containers and preserves data; `./scripts/local.sh logs` shows logs. Port 3000 must be free.
+
+`compose.local.yml` enables HTTP session cookies **for localhost only**; production Compose retains secure cookies and requires HTTPS. No production services or demo data are involved. Native Apple Silicon/macOS execution has not been tested in this workspace.
+
 ## Development
 
 Use Node 22, pnpm 9.15.9 and PostgreSQL 16 with pgvector. `pnpm install --frozen-lockfile`, then `pnpm build` and `pnpm type-check`.

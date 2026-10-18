@@ -37,6 +37,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm audit --prod --audit-level=high
+      - run: bash -n scripts/local.sh
       - name: Initialize real PostgreSQL schema and restricted roles
         env:
           PGHOST: localhost
@@ -59,6 +60,7 @@ jobs:
           CONTROL_DATABASE_PASSWORD: ci_control_password
         run: |
           docker compose config --quiet
+          docker compose -f compose.yml -f compose.local.yml config --quiet
           docker compose build
           docker compose up -d --wait
           curl --fail --retry 10 --retry-delay 2 --retry-connrefused http://127.0.0.1:3000/login > /dev/null
