@@ -44,6 +44,25 @@ export class HrService {
     return result.rows;
   }
 
+
+  async contracts(tenant: TenantContext, companyId: string) {
+    const scope = await this.scope(tenant, companyId);
+    const filter = scope.role === "EMPLOYEE" ? " AND e.user_id=$3" : "";
+    const result = await this.db.queryInTenantContext(tenant.tenantId,
+      'SELECT c.id,c.employee_id AS "employeeId",c.start_date::text AS "startDate",c.end_date::text AS "endDate",c.monthly_gross_minor::text AS "monthlyGrossMinor",c.currency FROM hr_contracts c JOIN hr_employees e ON e.tenant_id=c.tenant_id AND e.company_id=c.company_id AND e.id=c.employee_id WHERE c.tenant_id=$1 AND c.company_id=$2'+filter,
+      scope.role === "EMPLOYEE" ? [tenant.tenantId,companyId,scope.actorUserId] : [tenant.tenantId,companyId]);
+    return result.rows;
+  }
+
+  async leaves(tenant: TenantContext, companyId: string) {
+    const scope = await this.scope(tenant, companyId);
+    const filter = scope.role === "EMPLOYEE" ? " AND e.user_id=$3" : "";
+    const result = await this.db.queryInTenantContext(tenant.tenantId,
+      'SELECT l.id,l.employee_id AS "employeeId",l.starts_on::text AS "startsOn",l.ends_on::text AS "endsOn",l.status,l.decided_by AS "decidedBy" FROM hr_leave_requests l JOIN hr_employees e ON e.tenant_id=l.tenant_id AND e.company_id=l.company_id AND e.id=l.employee_id WHERE l.tenant_id=$1 AND l.company_id=$2'+filter+' ORDER BY l.starts_on DESC',
+      scope.role === "EMPLOYEE" ? [tenant.tenantId,companyId,scope.actorUserId] : [tenant.tenantId,companyId]);
+    return result.rows;
+  }
+
   async createEmployee(tenant: TenantContext, companyId: string, data: {
     displayName: string; userId?: string | null; startDate: string; endDate?: string | null;
   }) {
