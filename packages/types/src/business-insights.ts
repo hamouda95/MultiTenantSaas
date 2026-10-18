@@ -75,11 +75,19 @@ export function companyMetrics(
   const cash = s.accounts
     .filter((a) => a.companyId === c.id && a.kind === "CASH")
     .reduce((n, a) => n + accountBalance(s, a.id), 0);
-  const revenue = sales.reduce((n, x) => n + x.total, 0),
+  const revenue =
+      sales.reduce((n, x) => n + x.total, 0) +
+      (s.intercompany || [])
+        .filter((x) => x.companyId === c.id)
+        .reduce((n, x) => n + x.amount, 0),
     cogs = sales.reduce((n, x) => n + x.cost, 0),
-    expenses = s.expenses
-      .filter((e) => e.companyId === c.id)
-      .reduce((n, e) => n + e.amount, 0);
+    expenses =
+      s.expenses
+        .filter((e) => e.companyId === c.id)
+        .reduce((n, e) => n + e.amount, 0) +
+      (s.intercompany || [])
+        .filter((x) => x.toCompanyId === c.id)
+        .reduce((n, x) => n + x.amount, 0);
   return {
     bank,
     cash,
@@ -124,9 +132,11 @@ export function companyMetrics(
                 .slice(0, 10),
         )
         .reduce((n, f) => n + financingOutstanding(s, f.id).total, 0),
-    inventory: s.products
-      .filter((p) => p.companyId === c.id)
-      .reduce((n, p) => n + productStock(s, p.id) * p.cost, 0),
+    inventory:
+      transitValue(s, c.id) +
+      s.products
+        .filter((p) => p.companyId === c.id)
+        .reduce((n, p) => n + productStock(s, p.id) * p.cost, 0),
     units: s.products
       .filter((p) => p.companyId === c.id)
       .reduce((n, p) => n + productStock(s, p.id), 0),
@@ -191,7 +201,26 @@ export function replenishment(
           dailyDemand,
           stock: current,
           target,
-          need: Math.max(0, target - current),
+          need: Math.max(
+            0,
+            target -
+              current -
+              (s.transfers || [])
+                .filter(
+                  (t) =>
+                    t.companyId === c.id &&
+                    t.toId === store.id &&
+                    t.status === "IN_TRANSIT",
+                )
+                .reduce(
+                  (n, t) =>
+                    n +
+                    t.lines
+                      .filter((l) => l.productId === product.id)
+                      .reduce((v, l) => v + l.quantity, 0),
+                  0,
+                ),
+          ),
           confidence:
             history.length >= 10 ? ("MEDIUM" as const) : ("LOW" as const),
         };
@@ -217,7 +246,7 @@ export function replenishment(
           quantity,
           available: starting,
           confidence: row.confidence,
-          explanation: `${row.sold} unités vendues sur 30 jours ÷ 30 × (${c.leadDays} jours de délai + ${c.coverDays} jours de couverture), minimum ${c.minimumStock}. Allocation plafonnée au stock entrepôt restant. Historique limité : vérifier avant transfert.`,
+          explanation: `${row.sold} unités vendues sur 30 jours ÷ 30 × (${c.leadDays} jours de délai + ${c.coverDays} jours de couverture), minimum ${c.minimumStock}. Les quantités déjà en transit vers ce magasin sont déduites. Allocation plafonnée au stock entrepôt restant. Historique limité : vérifier avant transfert.`,
         });
     }
   }
@@ -365,6 +394,12 @@ export function annualPnl(s: BusinessState, companyId: string, year: number) {
     const m = row(p.date);
     if (m) m.interest += p.interest;
   }
+  for (const x of s.intercompany || []) {
+    const m = row(x.date);
+    if (!m) continue;
+    if (x.companyId === companyId) m.revenue += x.amount;
+    if (x.toCompanyId === companyId) m.expenses += x.amount;
+  }
   for (const m of months) {
     m.payroll = payrollCosts(s, companyId, m.period);
     m.grossMargin = m.revenue - m.cogs;
@@ -436,7 +471,22 @@ export function purchaseNeeds(
           n +
           o.lines
             .filter((l) => l.productId === p.id)
-            .reduce((t, l) => t + l.quantity, 0),
+            .reduce(
+              (t, l) =>
+                t +
+                Math.max(0, l.quantity - orderReceived(s, o.id, l.productId)),
+              0,
+            ),
+        0,
+      );
+    const inTransit = (s.transfers || [])
+      .filter((t) => t.companyId === c.id && t.status === "IN_TRANSIT")
+      .reduce(
+        (n, t) =>
+          n +
+          t.lines
+            .filter((l) => l.productId === p.id)
+            .reduce((v, l) => v + l.quantity, 0),
         0,
       );
     const target =
@@ -445,8 +495,11 @@ export function purchaseNeeds(
       productId: p.id,
       sold,
       stock: productStock(s, p.id),
-      incoming,
-      quantity: Math.max(0, target - productStock(s, p.id) - incoming),
+      incoming: incoming + inTransit,
+      quantity: Math.max(
+        0,
+        target - productStock(s, p.id) - incoming - inTransit,
+      ),
     };
   });
   const needed = rows.reduce((n, r) => n + r.quantity, 0);
@@ -458,4 +511,93 @@ export function purchaseNeeds(
     }
   }
   return rows;
+}
+
+/** Received quantities from the immutable stock movement history, including legacy full receipts. */
+export function orderReceived(
+  s: BusinessState,
+  orderId: string,
+  productId: string,
+) {
+  return s.movements
+    .filter(
+      (m) =>
+        m.reason === "RECEIPT" &&
+        m.sourceId === orderId &&
+        m.productId === productId,
+    )
+    .reduce((n, m) => n + m.quantity, 0);
+}
+export function transitValue(s: BusinessState, companyId: string) {
+  return (s.transfers || [])
+    .filter((t) => t.companyId === companyId && t.status === "IN_TRANSIT")
+    .reduce(
+      (n, t) => n + t.lines.reduce((v, l) => v + l.quantity * l.unitCost, 0),
+      0,
+    );
+}
+export function intercompanyOutstanding(s: BusinessState, invoiceId: string) {
+  const i = s.invoices.find((i) => i.id === invoiceId);
+  return i ? Math.max(0, i.amount - invoicePaid(s, i.id)) : 0;
+}
+export function groupAnnual(
+  s: BusinessState,
+  companyIds: string[],
+  year: number,
+  currency: string,
+  fromMonth = 1,
+  toMonth = 12,
+) {
+  const ids = new Set(
+    s.companies
+      .filter((c) => companyIds.includes(c.id) && c.currency === currency)
+      .map((c) => c.id),
+  );
+  const keys = [
+    "revenue",
+    "cogs",
+    "expenses",
+    "payroll",
+    "interest",
+    "grossMargin",
+    "operating",
+    "beforeTax",
+  ] as const;
+  const total = {
+    revenue: 0,
+    cogs: 0,
+    expenses: 0,
+    payroll: 0,
+    interest: 0,
+    grossMargin: 0,
+    operating: 0,
+    beforeTax: 0,
+  };
+  const companies = s.companies
+    .filter((c) => ids.has(c.id))
+    .map((company) => {
+      const p = annualPnl(s, company.id, year);
+      const period = { ...total };
+      for (const m of p.months.slice(fromMonth - 1, toMonth))
+        for (const k of keys) period[k] += m[k];
+      return { company, total: period };
+    });
+  for (const row of companies) for (const k of keys) total[k] += row.total[k];
+  const elimination = (s.intercompany || [])
+    .filter(
+      (x) =>
+        ids.has(x.companyId) &&
+        ids.has(x.toCompanyId) &&
+        x.date.slice(0, 4) === String(year) &&
+        Number(x.date.slice(5, 7)) >= fromMonth &&
+        Number(x.date.slice(5, 7)) <= toMonth,
+    )
+    .reduce((n, x) => n + x.amount, 0);
+  const consolidated = {
+    ...total,
+    revenue: total.revenue - elimination,
+    expenses: total.expenses - elimination,
+    grossMargin: total.grossMargin - elimination,
+  };
+  return { companies, total, elimination, consolidated };
 }

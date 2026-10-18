@@ -67,6 +67,7 @@ export interface BusinessOrder {
     | "SHIPPED"
     | "CUSTOMS"
     | "RECEIVED"
+    | "PARTIALLY_RECEIVED"
     | "CANCELLED";
   origin: string;
   eta: string;
@@ -75,6 +76,7 @@ export interface BusinessOrder {
   createdAt: string;
 }
 export interface BusinessInvoice {
+  intercompanyId?: string;
   id: string;
   companyId: string;
   kind: "PAYABLE" | "RECEIVABLE";
@@ -143,6 +145,9 @@ export interface BusinessAccess {
     | "MANAGER"
     | "FINANCE"
     | "OPERATIONS"
+    | "BUYER"
+    | "WAREHOUSE"
+    | "HR"
     | "VIEWER"
     | "CASHIER"
     | "STORE_MANAGER";
@@ -157,6 +162,9 @@ export interface BusinessEvent {
   reference: string;
 }
 export interface BusinessState {
+  receipts?: PurchaseReceipt[];
+  transfers?: StockTransfer[];
+  intercompany?: IntercompanyCharge[];
   companies: BusinessCompany[];
   locations: BusinessLocation[];
   products: BusinessProduct[];
@@ -197,6 +205,7 @@ export interface BusinessState {
 }
 export interface BusinessSnapshot {
   hrAccess?: boolean;
+  hrCompanyIds?: string[];
   version: number;
   state: BusinessState;
   holdingOwner: boolean;
@@ -351,4 +360,37 @@ export interface SupplierSample {
   leadDays: number;
   status: "PROPOSED" | "APPROVED";
   createdAt: string;
+}
+
+export interface PurchaseReceipt {
+  id: string;
+  companyId: string;
+  orderId: string;
+  reference: string;
+  lines: { productId: string; quantity: number }[];
+  landedCharges: number;
+  invoiceId?: string;
+  date: string;
+}
+export interface StockTransfer {
+  id: string;
+  companyId: string;
+  reference: string;
+  fromId: string;
+  toId: string;
+  lines: { productId: string; quantity: number; unitCost: number }[];
+  status: "IN_TRANSIT" | "RECEIVED";
+  date: string;
+  receivedAt?: string;
+}
+export interface IntercompanyCharge {
+  id: string;
+  companyId: string;
+  toCompanyId: string;
+  reference: string;
+  description: string;
+  amount: number;
+  date: string;
+  receivableId: string;
+  payableId: string;
 }

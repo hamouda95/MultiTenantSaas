@@ -13,7 +13,11 @@ import { Input } from "@/components/ui/input";
 
 export default function HrPage() {
   const { tenantId } = useParams<{ tenantId: string }>();
-  const { canManage } = useTenantAccess(tenantId);
+  const { canManage: tenantManage } = useTenantAccess(tenantId);
+  const scope = useQuery({
+    queryKey: ["business", tenantId],
+    queryFn: () => api.business(tenantId),
+  });
   const cache = useQueryClient();
   const holding = useQuery({
     queryKey: ["hr-companies", tenantId],
@@ -24,6 +28,11 @@ export default function HrPage() {
   const selected = companies.some((c) => c.id === companyId)
     ? companyId
     : (companies[0]?.id ?? "");
+  const canManage =
+    tenantManage ||
+    !!scope.data?.state.access.some(
+      (g) => g.companyId === selected && g.role === "HR",
+    );
   const employees = useQuery({
     queryKey: ["hr-employees", tenantId, selected],
     queryFn: () => api.hrEmployees(tenantId, selected),

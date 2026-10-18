@@ -22,6 +22,8 @@ let failurePage;
   });
   const page = await context.newPage();
   failurePage = page;
+  const allSpaces = async () =>
+    page.getByLabel("Espace métier", { exact: true }).selectOption("tous");
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   const headers = { Origin: "http://localhost:3000" };
@@ -48,6 +50,7 @@ let failurePage;
   await page
     .getByRole("heading", { name: "Gestion du holding", exact: true })
     .waitFor();
+  await allSpaces();
   await page
     .getByRole("button", { name: "Sociétés & configuration", exact: true })
     .click();
@@ -238,6 +241,7 @@ let failurePage;
   await page
     .getByRole("heading", { name: "Gestion du holding", exact: true })
     .waitFor();
+  await allSpaces();
   response = await context.request.get(`/api/v1/tenants/${tenantId}/business`);
   snap = await response.json();
   assert.equal(snap.state.sales.length, 1);
@@ -488,6 +492,7 @@ let failurePage;
   );
   // New modules: real employee accrual/payment and supplier sample → purchase draft.
   await page.goto(`/t/${tenantId}/business`);
+  await allSpaces();
   await page.getByLabel("Société", { exact: true }).selectOption(companyId);
   await page
     .getByRole("button", { name: "Ressources humaines", exact: true })
@@ -535,6 +540,7 @@ let failurePage;
     leadDays: 30,
   });
   await page.reload();
+  await allSpaces();
   await page.getByLabel("Société", { exact: true }).selectOption(companyId);
   await page
     .getByRole("button", { name: "Échantillons & commandes", exact: true })
@@ -610,6 +616,185 @@ let failurePage;
   await page.getByText(/2026-11-01.*APPROVED/).waitFor();
   await page.screenshot({
     path: "test-results/hr-contracts-leave.png",
+    fullPage: true,
+  });
+  // ERP: partial receipt, shipment/confirmation and group elimination use the real UI.
+  response = await context.request.get(`/api/v1/tenants/${tenantId}/business`);
+  snap = await response.json();
+  snap = await api(`/api/v1/tenants/${tenantId}/business/commands`, {
+    commandId: randomUUID(),
+    version: snap.version,
+    action: {
+      type: "company.create",
+      data: {
+        name: "ERP Services",
+        currency: "TND",
+        country: "Tunisie",
+        brands: [],
+        leadDays: 10,
+        coverDays: 30,
+        minimumStock: 2,
+        modules: ["finance"],
+      },
+    },
+  });
+  const otherCompany = snap.state.companies.at(-1).id;
+  await cmd({
+    type: "account.create",
+    companyId: otherCompany,
+    name: "ERP Group Bank",
+    kind: "BANK",
+    opening: 2000000,
+    asOf: "2025-01-01",
+  });
+  await cmd({
+    type: "order.create",
+    reference: "ERP-PART-BROWSER",
+    supplierId: snap.state.partners.find((p) => p.kind === "SUPPLIER").id,
+    locationId: warehouseId,
+    origin: "Istanbul",
+    eta: "2026-10-18",
+    dueDate: "2026-11-01",
+    landedCharges: 1000,
+    lines: [{ productId, quantity: 10, unitPrice: 1000 }],
+  });
+  const partialOrder = snap.state.orders.at(-1).id;
+  for (const status of ["APPROVED", "ORDERED", "SHIPPED", "CUSTOMS"])
+    await cmd({ type: "order.transition", orderId: partialOrder, status });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto(`/t/${tenantId}/business`);
+  await allSpaces();
+  await page.getByLabel("Société", { exact: true }).selectOption(companyId);
+  await page
+    .getByRole("button", { name: "Réceptions fournisseurs", exact: true })
+    .click();
+  await page
+    .getByLabel("Commande à réceptionner", { exact: true })
+    .selectOption(partialOrder);
+  await page
+    .getByLabel("Référence du bon de réception", { exact: true })
+    .fill("BR-PART-BROWSER");
+  await page
+    .getByLabel("Quantité reçue SHOE-42-BLACK", { exact: true })
+    .fill("4");
+  await page
+    .getByRole("button", {
+      name: "Valider la réception partielle",
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("rowheader", { name: "BR-PART-BROWSER", exact: true })
+    .waitFor();
+  response = await context.request.get(`/api/v1/tenants/${tenantId}/business`);
+  snap = await response.json();
+  assert.equal(
+    snap.state.orders.find((o) => o.id === partialOrder).status,
+    "PARTIALLY_RECEIVED",
+  );
+  const storeBefore = snap.state.movements
+    .filter((m) => m.productId === productId && m.locationId === storeId)
+    .reduce((n, m) => n + m.quantity, 0);
+  await page.screenshot({
+    path: "test-results/erp-receiving-desktop.png",
+    fullPage: true,
+  });
+  await page
+    .getByRole("button", { name: "Transferts suivis", exact: true })
+    .click();
+  await page
+    .getByLabel("Référence transfert", { exact: true })
+    .fill("TR-BROWSER");
+  await page
+    .getByLabel("Origine du transfert suivi", { exact: true })
+    .selectOption(warehouseId);
+  await page
+    .getByLabel("Destination du transfert suivi", { exact: true })
+    .selectOption(storeId);
+  await page
+    .getByLabel("Variante du transfert suivi", { exact: true })
+    .selectOption(productId);
+  await page.getByLabel("Quantité à expédier", { exact: true }).fill("2");
+  await page
+    .getByRole("button", { name: "Confirmer l’expédition", exact: true })
+    .click();
+  await page.getByRole("cell", { name: "En transit", exact: true }).waitFor();
+  await page.screenshot({
+    path: "test-results/erp-transit-desktop.png",
+    fullPage: true,
+  });
+  await page
+    .getByRole("button", { name: "Confirmer la réception", exact: true })
+    .click();
+  await page.getByRole("cell", { name: /^Reçu le/ }).waitFor();
+  response = await context.request.get(`/api/v1/tenants/${tenantId}/business`);
+  snap = await response.json();
+  assert.equal(
+    snap.state.movements
+      .filter((m) => m.productId === productId && m.locationId === storeId)
+      .reduce((n, m) => n + m.quantity, 0),
+    storeBefore + 2,
+  );
+  await page.getByRole("button", { name: "Intragroupe", exact: true }).click();
+  await page
+    .getByLabel("Société émettrice", { exact: true })
+    .selectOption(companyId);
+  await page
+    .getByLabel("Société bénéficiaire", { exact: true })
+    .selectOption(otherCompany);
+  await page
+    .getByLabel("Référence de prestation", { exact: true })
+    .fill("IC-ERP-BROWSER");
+  await page
+    .getByLabel("Description de la prestation", { exact: true })
+    .fill("Logistique partagée");
+  await page
+    .getByLabel("Montant de prestation (TND)", { exact: true })
+    .fill("100");
+  await page
+    .getByRole("button", {
+      name: "Enregistrer la prestation interne",
+      exact: true,
+    })
+    .click();
+  await page.getByRole("heading", { name: /IC-ERP-BROWSER/ }).waitFor();
+  await page
+    .getByLabel("Montant du règlement interne", { exact: true })
+    .fill("20");
+  await page
+    .getByRole("button", { name: "Régler les deux sociétés", exact: true })
+    .click();
+  await page.getByText(/Reste à régler : 80,000/).waitFor();
+  await page.getByLabel("Société", { exact: true }).selectOption("");
+  await page
+    .getByRole("button", { name: "Pilotage groupe", exact: true })
+    .click();
+  await page
+    .getByRole("heading", {
+      name: "Pilotage & consolidation du groupe",
+      exact: true,
+    })
+    .waitFor();
+  assert.match(
+    await page
+      .getByText("CA consolidé · période", { exact: true })
+      .locator("..")
+      .innerText(),
+    /12,000/,
+  );
+  await page.screenshot({
+    path: "test-results/erp-group-desktop.png",
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth > innerWidth,
+    ),
+    false,
+  );
+  await page.screenshot({
+    path: "test-results/erp-group-mobile.png",
     fullPage: true,
   });
   await page.goto("/administration");

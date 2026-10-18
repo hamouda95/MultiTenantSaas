@@ -46,7 +46,7 @@ export class HrService {
       if (
         g.userId === user.userId &&
         g.membershipId === tenant.membershipId &&
-        ["MANAGER", "OPERATIONS"].includes(g.role)
+        ["MANAGER", "OPERATIONS", "FINANCE", "HR"].includes(g.role)
       )
         ids.add(g.companyId);
     return (state?.companies || [])
@@ -103,6 +103,7 @@ export class HrService {
     );
     const role =
       owner ||
+      grant?.role === "HR" ||
       (["MANAGER", "FINANCE"].includes(grant?.role || "") &&
         tenant.permissions.includes("hr:manage"))
         ? "HR_MANAGER"

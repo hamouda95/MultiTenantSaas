@@ -34,6 +34,22 @@ export class BusinessService {
         tenant.permissions.includes("hr:manage"),
     };
   }
+  private hrCompanies(tenant: TenantContext, state: BusinessState) {
+    const { userId, hrAccess } = this.identity(tenant);
+    return state.companies
+      .filter(
+        (c) =>
+          hrAccess ||
+          state.access.some(
+            (g) =>
+              g.companyId === c.id &&
+              g.userId === userId &&
+              g.membershipId === tenant.membershipId &&
+              g.role === "HR",
+          ),
+      )
+      .map((c) => c.id);
+  }
   async version(tenant: TenantContext) {
     const { userId, owner } = this.identity(tenant);
     const r = await this.db.queryInTenantContext(
@@ -71,7 +87,13 @@ export class BusinessService {
         hrAccess,
       ),
       holdingOwner: owner,
-      hrAccess,
+      hrAccess:
+        this.hrCompanies(tenant, result.rows[0]?.state || emptyBusiness())
+          .length > 0,
+      hrCompanyIds: this.hrCompanies(
+        tenant,
+        result.rows[0]?.state || emptyBusiness(),
+      ),
       userId,
     };
   }
@@ -96,8 +118,6 @@ export class BusinessService {
     forPos = false,
   ) {
     const { userId, owner, hrAccess } = this.identity(tenant);
-    if (command.action.type.startsWith("hr.") && !hrAccess)
-      throw new ForbiddenException("Permission hr:manage requise");
     return this.db.runInTenantContext(tenant.tenantId, async (client) => {
       await client.query(
         "SELECT pg_advisory_xact_lock_shared(hashtextextended($1,0))",
@@ -119,6 +139,16 @@ export class BusinessService {
         "SELECT version,state FROM business_ledgers WHERE tenant_id=$1 FOR UPDATE",
         [tenant.tenantId],
       );
+      if (
+        command.action.type.startsWith("hr.") &&
+        (!("companyId" in command.action) ||
+          !this.hrCompanies(tenant, rows[0].state).includes(
+            command.action.companyId,
+          ))
+      )
+        throw new ForbiddenException(
+          "Permission RH requise dans cette société",
+        );
       const fingerprint = createHash("sha256")
         .update(JSON.stringify(command.action))
         .digest("hex");
@@ -150,7 +180,8 @@ export class BusinessService {
             hrAccess,
           ),
           holdingOwner: owner,
-          hrAccess,
+          hrAccess: this.hrCompanies(tenant, rows[0].state).length > 0,
+          hrCompanyIds: this.hrCompanies(tenant, rows[0].state),
           userId,
         };
       }
@@ -295,7 +326,8 @@ export class BusinessService {
           hrAccess,
         ),
         holdingOwner: owner,
-        hrAccess,
+        hrAccess: this.hrCompanies(tenant, state).length > 0,
+        hrCompanyIds: this.hrCompanies(tenant, state),
         userId,
       };
     });

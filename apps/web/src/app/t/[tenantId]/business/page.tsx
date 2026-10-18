@@ -30,6 +30,10 @@ import {
   replenishment,
 } from "@saas/types";
 import type { BusinessState, BusinessCompany, BusinessLine } from "@saas/types";
+import { GroupDashboard } from "@/components/business/group-dashboard";
+import { IntercompanyPanel } from "@/components/business/intercompany-panel";
+import { ReceivingPanel } from "@/components/business/receiving-panel";
+import { TransferPanel } from "@/components/business/transfer-panel";
 import { AnnualPnl } from "@/components/business/annual-pnl";
 import { HrPanel } from "@/components/business/hr-panel";
 import { SupplierSamples } from "@/components/business/supplier-samples";
@@ -72,9 +76,14 @@ const statusLabels: Record<string, string> = {
   SHIPPED: "Expédiée",
   CUSTOMS: "Douane",
   RECEIVED: "Réceptionnée",
+  PARTIALLY_RECEIVED: "Réception partielle",
   CANCELLED: "Annulée",
 };
 const tabs = [
+  ["group", "Pilotage groupe"],
+  ["receipts", "Réceptions fournisseurs"],
+  ["transfers", "Transferts suivis"],
+  ["intercompany", "Intragroupe"],
   ["overview", "Vue holding"],
   ["companies", "Sociétés & configuration"],
   ["catalog", "Catalogue & réseau"],
@@ -525,7 +534,8 @@ export default function BusinessPage() {
     refetchInterval: busyRef.current ? false : 5000,
     retry: false,
   });
-  const [tab, setTab] = useState("overview");
+  const [tab, setTab] = useState("group");
+  const [profile, setProfile] = useState("direction");
   const [selected, setSelected] = useState("");
   const [warehouse, setWarehouse] = useState("");
   const [busy, setBusy] = useState(false);
@@ -605,6 +615,113 @@ export default function BusinessPage() {
     !!company && active && ["MANAGER", "FINANCE"].includes(role || "");
   const operate =
     !!company && active && ["MANAGER", "OPERATIONS"].includes(role || "");
+  const buying =
+    !!company &&
+    active &&
+    ["MANAGER", "OPERATIONS", "BUYER"].includes(role || "");
+  const warehousing =
+    !!company &&
+    active &&
+    ["MANAGER", "OPERATIONS", "WAREHOUSE"].includes(role || "");
+  const financialIds = s.companies
+    .filter(
+      (c) =>
+        snapshot.holdingOwner ||
+        s.access.some(
+          (g) =>
+            g.companyId === c.id &&
+            g.userId === snapshot.userId &&
+            ["MANAGER", "FINANCE", "VIEWER"].includes(g.role),
+        ),
+    )
+    .map((c) => c.id);
+  const settlementIds = s.companies
+    .filter(
+      (c) =>
+        snapshot.holdingOwner ||
+        s.access.some(
+          (g) =>
+            g.companyId === c.id &&
+            g.userId === snapshot.userId &&
+            ["MANAGER", "FINANCE"].includes(g.role),
+        ),
+    )
+    .map((c) => c.id);
+  const roles = snapshot.holdingOwner
+    ? ["MANAGER"]
+    : s.access
+        .filter(
+          (g) =>
+            g.userId === snapshot.userId &&
+            (!company || g.companyId === company.id),
+        )
+        .map((g) => g.role);
+  const has = (allowed: string[]) => roles.some((r) => allowed.includes(r));
+  const spaces = [
+    {
+      id: "direction",
+      name: "Direction du groupe",
+      views: [
+        "group",
+        "overview",
+        "pnl",
+        ...(has(["MANAGER"]) ? ["companies"] : []),
+        ...(snapshot.holdingOwner ? ["access"] : []),
+      ],
+      allowed: has(["MANAGER", "FINANCE", "VIEWER"]),
+    },
+    {
+      id: "achats",
+      name: "Service achats",
+      views: ["samples", "purchasing", "catalog"],
+      allowed: has(["MANAGER", "OPERATIONS", "BUYER"]),
+    },
+    {
+      id: "logistique",
+      name: "Entrepôts & logistique",
+      views: ["receipts", "transfers", "inventory", "intelligence", "catalog"],
+      allowed: has(["MANAGER", "OPERATIONS", "WAREHOUSE"]),
+    },
+    {
+      id: "ventes",
+      name: "Ventes & magasins",
+      views: ["sales", "inventory", "catalog"],
+      allowed: has(["MANAGER", "OPERATIONS"]),
+    },
+    {
+      id: "finance",
+      name: "Finance & trésorerie",
+      views: ["finance", "intercompany", "group", "pnl", "purchasing"],
+      allowed: has(["MANAGER", "FINANCE"]),
+    },
+    {
+      id: "rh",
+      name: "Ressources humaines",
+      views: ["hr"],
+      allowed: !!snapshot.hrAccess && has(["MANAGER", "FINANCE", "HR"]),
+    },
+  ].filter((x) => x.allowed);
+  const activeProfile =
+    profile === "tous"
+      ? "tous"
+      : spaces.some((x) => x.id === profile)
+        ? profile
+        : spaces[0]?.id || "tous";
+  const availableTabs = new Set(
+    (activeProfile === "tous"
+      ? spaces
+      : spaces.filter((x) => x.id === activeProfile)
+    ).flatMap((x) => x.views),
+  );
+  const activeTab = availableTabs.has(tab)
+    ? tab
+    : spaces.find((x) => x.id === activeProfile)?.views[0] ||
+      spaces[0]?.views[0] ||
+      "overview";
+  function openView(id: string) {
+    setProfile("tous");
+    setTab(id);
+  }
   const products = rows(s.products),
     locations = rows(s.locations),
     partners = rows(s.partners),
@@ -746,7 +863,7 @@ export default function BusinessPage() {
                 size="sm"
                 variant="secondary"
                 onClick={() => {
-                  setTab(id);
+                  openView(id);
                   if (id !== "pnl" && !selected)
                     setSelected(s.companies[0]?.id || "");
                   if (id === "pnl") setSelected("");
@@ -764,17 +881,49 @@ export default function BusinessPage() {
           </div>
         </div>
       )}
-      <nav aria-label="Modules métier" className="mb-6 flex flex-wrap gap-2">
-        {tabs.map(([id, label]) => (
-          <Button
-            key={id}
-            variant={tab === id ? "primary" : "secondary"}
-            size="sm"
-            onClick={() => setTab(id)}
+      <div className="mb-4 flex flex-wrap items-end gap-4 rounded-xl border border-border bg-surface p-4">
+        <label className="min-w-64 text-sm font-medium">
+          Espace métier
+          <select
+            aria-label="Espace métier"
+            className={selectClass}
+            value={activeProfile}
+            onChange={(e) => {
+              const value = e.target.value;
+              setProfile(value);
+              setTab(
+                value === "tous"
+                  ? spaces[0]?.views[0] || "overview"
+                  : spaces.find((x) => x.id === value)!.views[0],
+              );
+            }}
           >
-            {label}
-          </Button>
-        ))}
+            {spaces.map((x) => (
+              <option key={x.id} value={x.id}>
+                {x.name}
+              </option>
+            ))}
+            <option value="tous">Tous les espaces autorisés</option>
+          </select>
+        </label>
+        <p className="text-xs text-muted">
+          Choisissez votre métier, puis le document ou la tâche à traiter. Les
+          droits sont contrôlés par société côté serveur.
+        </p>
+      </div>
+      <nav aria-label="Modules métier" className="mb-6 flex flex-wrap gap-2">
+        {tabs
+          .filter(([id]) => availableTabs.has(id))
+          .map(([id, label]) => (
+            <Button
+              key={id}
+              variant={activeTab === id ? "primary" : "secondary"}
+              size="sm"
+              onClick={() => setTab(id)}
+            >
+              {label}
+            </Button>
+          ))}
       </nav>
       {error && (
         <div
@@ -809,15 +958,68 @@ export default function BusinessPage() {
           )}
         </Panel>
       )}
-      {tab === "pnl" && <AnnualPnl state={s} companyId={company?.id} />}
+      {activeTab === "group" &&
+        (financialIds.length ? (
+          <GroupDashboard
+            state={s}
+            companyIds={financialIds.filter(
+              (id) => !company || id === company.id,
+            )}
+            onCompany={(id, view = "overview") => {
+              setSelected(id);
+              openView(view);
+            }}
+          />
+        ) : (
+          <p>
+            Le pilotage financier est réservé aux sociétés pour lesquelles vous
+            avez un accès de direction, finance ou lecture financière.
+          </p>
+        ))}
+      {activeTab === "intercompany" && (
+        <IntercompanyPanel
+          state={s}
+          companyIds={settlementIds}
+          busy={busy}
+          run={run}
+        />
+      )}
+      {company && activeTab === "receipts" && (
+        <ReceivingPanel
+          state={s}
+          company={company}
+          editable={
+            warehousing &&
+            enabled("purchasing") &&
+            enabled("inventory") &&
+            enabled("finance")
+          }
+          busy={busy}
+          run={run}
+        />
+      )}
+      {company && activeTab === "transfers" && (
+        <TransferPanel
+          key={company.id}
+          state={s}
+          company={company}
+          editable={warehousing && enabled("inventory")}
+          busy={busy}
+          run={run}
+        />
+      )}
+      {!company && ["receipts", "transfers"].includes(activeTab) && (
+        <p>Sélectionnez une société pour ouvrir les documents logistiques.</p>
+      )}
+      {activeTab === "pnl" && <AnnualPnl state={s} companyId={company?.id} />}
       {company &&
-        tab === "samples" &&
+        activeTab === "samples" &&
         (enabled("purchasing") ? (
           <SupplierSamples
             state={s}
             company={company}
             manage={manage}
-            operate={operate}
+            operate={buying}
             busy={busy}
             run={run}
           />
@@ -825,24 +1027,33 @@ export default function BusinessPage() {
           <p>Module achats désactivé.</p>
         ))}
       {company &&
-        tab === "hr" &&
+        activeTab === "hr" &&
         (enabled("hr") ? (
           <HrPanel
             key={company.id}
             state={s}
             company={company}
-            manage={manage && snapshot.hrAccess !== false}
-            finance={finance && snapshot.hrAccess !== false}
+            manage={
+              (manage || role === "HR") &&
+              (snapshot.hrCompanyIds?.includes(company.id) ??
+                snapshot.hrAccess !== false)
+            }
+            accrue={role === "HR"}
+            finance={
+              finance &&
+              (snapshot.hrCompanyIds?.includes(company.id) ??
+                snapshot.hrAccess !== false)
+            }
             busy={busy}
             run={run}
           />
         ) : (
           <p>Activez le module RH dans Sociétés & configuration.</p>
         ))}
-      {!company && ["samples", "hr"].includes(tab) && (
+      {!company && ["samples", "hr"].includes(activeTab) && (
         <p>Sélectionnez une société pour ouvrir ce module.</p>
       )}
-      {tab === "overview" && (
+      {activeTab === "overview" && (
         <>
           <div className="mb-5 grid gap-4 sm:grid-cols-3">
             <Card className="p-5">
@@ -961,7 +1172,7 @@ export default function BusinessPage() {
           lecture seule jusqu’à restauration.
         </p>
       )}
-      {tab === "companies" && (
+      {activeTab === "companies" && (
         <>
           {snapshot.holdingOwner && (
             <CompanyWizard key="new-company" run={run} busy={busy} />
@@ -1036,17 +1247,20 @@ export default function BusinessPage() {
           </Panel>
         </>
       )}
-      {!["overview", "companies"].includes(tab) && !company && (
-        <Panel title="Choisir une société">
-          <p className="text-sm text-muted">
-            Sélectionnez une société en haut pour consulter ses opérations et
-            saisir de nouvelles données.
-          </p>
-        </Panel>
-      )}
-      {company && tab === "catalog" && (
+      {!["overview", "companies", "group", "pnl", "intercompany"].includes(
+        activeTab,
+      ) &&
+        !company && (
+          <Panel title="Choisir une société">
+            <p className="text-sm text-muted">
+              Sélectionnez une société en haut pour consulter ses opérations et
+              saisir de nouvelles données.
+            </p>
+          </Panel>
+        )}
+      {company && activeTab === "catalog" && (
         <>
-          {manage && (
+          {warehousing && (
             <Form
               title="Ajouter un entrepôt ou magasin"
               busy={busy}
@@ -1080,7 +1294,7 @@ export default function BusinessPage() {
               ])}
             />
           </Panel>
-          {operate && (
+          {buying && (
             <Form
               title="Ajouter une variante produit"
               busy={busy}
@@ -1155,7 +1369,7 @@ export default function BusinessPage() {
               ])}
             />
           </Panel>
-          {(operate || finance) && (
+          {(buying || finance) && (
             <Form
               title="Ajouter un fournisseur ou client"
               busy={busy}
@@ -1194,17 +1408,17 @@ export default function BusinessPage() {
           </Panel>
         </>
       )}
-      {company && tab === "purchasing" && (
+      {company && activeTab === "purchasing" && (
         <>
           <PartnerDirectory
             key={company.id + "suppliers"}
             partners={partners}
             kind="SUPPLIER"
-            editable={(operate || finance) && enabled("purchasing")}
+            editable={(buying || finance) && enabled("purchasing")}
             busy={busy}
             run={(a) => run(withCompany(a))}
           />
-          {operate && enabled("purchasing") && (
+          {buying && enabled("purchasing") && (
             <ArticleCreator
               canPrice={manage}
               currency={currency}
@@ -1212,22 +1426,24 @@ export default function BusinessPage() {
               run={(a) => run(withCompany(a))}
             />
           )}
-          <FinancingPanel
-            key={company.id}
-            state={s}
-            companyId={company.id}
-            currency={currency}
-            editable={finance && enabled("finance") && enabled("purchasing")}
-            busy={busy}
-            run={(a) => run(withCompany(a))}
-          />
+          {financialIds.includes(company.id) && (
+            <FinancingPanel
+              key={company.id}
+              state={s}
+              companyId={company.id}
+              currency={currency}
+              editable={finance && enabled("finance") && enabled("purchasing")}
+              busy={busy}
+              run={(a) => run(withCompany(a))}
+            />
+          )}
           {!enabled("purchasing") && (
             <p className="mb-4 text-sm text-muted">
               Module achats désactivé. Le responsable peut l’activer dans la
               configuration.
             </p>
           )}
-          {operate && enabled("purchasing") && (
+          {buying && enabled("purchasing") && (
             <Form
               title="Nouvelle commande fournisseur / import"
               busy={busy}
@@ -1303,6 +1519,7 @@ export default function BusinessPage() {
                   ORDERED: "SHIPPED",
                   SHIPPED: "CUSTOMS",
                   CUSTOMS: "RECEIVED",
+                  PARTIALLY_RECEIVED: "RECEIVED",
                 };
                 const n = next[o.status];
                 return [
@@ -1315,10 +1532,11 @@ export default function BusinessPage() {
                     currency,
                   ),
                   <div className="space-y-2">
-                    {operate &&
+                    {buying &&
                       enabled("purchasing") &&
                       n &&
-                      (n !== "APPROVED" || manage) && (
+                      (n !== "APPROVED" || manage) &&
+                      (n !== "RECEIVED" || warehousing) && (
                         <Button
                           size="sm"
                           loading={busy}
@@ -1375,7 +1593,7 @@ export default function BusinessPage() {
           </Panel>
         </>
       )}
-      {company && tab === "inventory" && (
+      {company && activeTab === "inventory" && (
         <>
           <InventoryAnalysis
             key={company.id}
@@ -1429,7 +1647,7 @@ export default function BusinessPage() {
               <Text name="reason" label="Motif obligatoire" />
             </Form>
           )}
-          {operate && enabled("inventory") && (
+          {warehousing && enabled("inventory") && (
             <Form
               title="Transfert de stock"
               busy={busy}
@@ -1492,7 +1710,7 @@ export default function BusinessPage() {
           </Panel>
         </>
       )}
-      {company && tab === "sales" && (
+      {company && activeTab === "sales" && (
         <>
           <div className="mb-5 rounded-xl border border-accent bg-accent-tint p-5">
             <h2 className="font-semibold">Vente en magasin</h2>
@@ -1616,7 +1834,7 @@ export default function BusinessPage() {
           </p>
         </>
       )}
-      {company && tab === "finance" && (
+      {company && activeTab === "finance" && (
         <>
           {finance && enabled("finance") && (
             <Form
@@ -1776,7 +1994,9 @@ export default function BusinessPage() {
                 name="invoiceId"
                 label="Facture à régler"
                 options={rows(s.invoices)
-                  .filter((i) => i.amount > invoicePaid(s, i.id))
+                  .filter(
+                    (i) => !i.intercompanyId && i.amount > invoicePaid(s, i.id),
+                  )
                   .map((i) => ({
                     id: i.id,
                     name: `${i.reference} · ${i.kind === "PAYABLE" ? "Payer" : "Encaisser"} ${money(i.amount - invoicePaid(s, i.id), currency)}`,
@@ -1895,7 +2115,7 @@ export default function BusinessPage() {
           </Panel>
         </>
       )}
-      {company && tab === "intelligence" && (
+      {company && activeTab === "intelligence" && (
         <>
           <Panel title="Alertes de gestion">
             <div className="space-y-3 text-sm">
@@ -2023,7 +2243,7 @@ export default function BusinessPage() {
           </Panel>
         </>
       )}
-      {company && tab === "access" && (
+      {company && activeTab === "access" && (
         <Panel title="Accès à cette société">
           <p className="mb-4 text-sm text-muted">
             Les propriétaires du holding voient toutes les sociétés. Les autres
@@ -2064,6 +2284,12 @@ export default function BusinessPage() {
                   { id: "MANAGER", name: "Responsable" },
                   { id: "FINANCE", name: "Finance" },
                   { id: "OPERATIONS", name: "Opérations" },
+                  { id: "BUYER", name: "Service achats" },
+                  { id: "WAREHOUSE", name: "Entrepôts & logistique" },
+                  {
+                    id: "HR",
+                    name: "Ressources humaines (sans règlement bancaire)",
+                  },
                   { id: "VIEWER", name: "Lecteur" },
                   { id: "CASHIER", name: "Caissier (magasins limités)" },
                   { id: "STORE_MANAGER", name: "Responsable magasin" },
@@ -2110,7 +2336,7 @@ export default function BusinessPage() {
           />
         </Panel>
       )}
-      {company && manage && (
+      {company && manage && activeTab === "sales" && (
         <Form
           title="Configurer la Caisse du magasin"
           busy={busy}
@@ -2156,11 +2382,11 @@ export default function BusinessPage() {
         </Form>
       )}
       <p className="mt-6 text-xs text-muted">
-        Pilote métier : opérations manuelles, réception complète et transferts
-        immédiats. Comptabilité légale, TVA, paie, rapprochement bancaire,
-        intégrations POS et consolidation comptable ne sont pas encore
-        implémentés. Ces écrans ne constituent pas des états financiers
-        certifiés.
+        Gestion opérationnelle : documents liés, réceptions partielles,
+        transferts suivis et consolidation de gestion. La comptabilité légale,
+        la TVA, la paie légale, les connexions bancaires et la consolidation
+        comptable réglementaire restent hors périmètre. Les chiffres affichés ne
+        sont pas des comptes certifiés.
       </p>
     </>
   );

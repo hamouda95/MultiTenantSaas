@@ -1,6 +1,11 @@
 "use client";
 import { useState } from "react";
-import { annualPnl, currencyDigits, type BusinessState } from "@saas/types";
+import {
+  annualPnl,
+  groupAnnual,
+  currencyDigits,
+  type BusinessState,
+} from "@saas/types";
 import { Button } from "@/components/ui/button";
 
 export function AnnualPnl({
@@ -45,10 +50,14 @@ export function AnnualPnl({
     "Résultat avant impôts et amortissements",
   ];
   const total = (key: (typeof keys)[number], month?: number) =>
-    rows.reduce(
-      (n, r) => n + (month === undefined ? r.total[key] : r.months[month][key]),
-      0,
-    );
+    groupAnnual(
+      state,
+      rows.map((r) => r.company.id),
+      year,
+      currency,
+      month === undefined ? 1 : month + 1,
+      month === undefined ? 12 : month + 1,
+    ).consolidated[key];
   const fmt = (n: number) =>
     new Intl.NumberFormat("fr-TN", { style: "currency", currency }).format(
       n / 10 ** currencyDigits(currency),

@@ -1035,6 +1035,238 @@ describe.skipIf(!live)("Real PostgreSQL API and RLS integration", () => {
       ),
     ).toBe(true);
   });
+  it("persists ERP partial receipts, scoped buyer/warehouse/HR roles and paired internal settlement", async () => {
+    let snap = (
+      await request(`/tenants/${tenantId}/business`, { cookie: ownerCookie })
+    ).body;
+    async function command(
+      action: Record<string, unknown>,
+      cookie = ownerCookie,
+    ) {
+      const r = await request(`/tenants/${tenantId}/business/commands`, {
+        method: "POST",
+        cookie,
+        body: { commandId: randomUUID(), version: snap.version, action },
+      });
+      if (r.status === 201) snap = r.body;
+      return r;
+    }
+    const data = {
+      currency: "TND",
+      country: "Tunisie",
+      brands: [],
+      leadDays: 10,
+      coverDays: 30,
+      minimumStock: 2,
+      modules: ["purchasing", "inventory", "sales", "finance", "hr"],
+    };
+    expect(
+      (
+        await command({
+          type: "company.create",
+          data: { ...data, name: "ERP A" },
+        })
+      ).status,
+    ).toBe(201);
+    const a = snap.state.companies.at(-1).id;
+    expect(
+      (
+        await command({
+          type: "company.create",
+          data: { ...data, name: "ERP B" },
+        })
+      ).status,
+    ).toBe(201);
+    const b = snap.state.companies.at(-1).id;
+    await command({
+      type: "location.create",
+      companyId: a,
+      name: "ERP Warehouse",
+      kind: "WAREHOUSE",
+    });
+    const wh = snap.state.locations.at(-1).id;
+    await command({
+      type: "product.create",
+      companyId: a,
+      sku: "ERP-42",
+      name: "ERP Shoe",
+      brand: "Demo",
+      size: "42",
+      color: "Black",
+    });
+    const p = snap.state.products.at(-1).id;
+    await command({
+      type: "partner.create",
+      companyId: a,
+      name: "ERP Supplier",
+      kind: "SUPPLIER",
+      email: "",
+    });
+    const supplier = snap.state.partners.at(-1).id;
+    for (const companyId of [a, b])
+      await command({
+        type: "account.create",
+        companyId,
+        name: "ERP Bank",
+        kind: "BANK",
+        opening: 1000000,
+        asOf: "2025-01-01",
+      });
+    const bankA = snap.state.accounts.at(-2).id,
+      bankB = snap.state.accounts.at(-1).id;
+    await command({
+      type: "order.create",
+      companyId: a,
+      reference: "ERP-PO",
+      supplierId: supplier,
+      locationId: wh,
+      origin: "Test",
+      eta: "2026-10-18",
+      dueDate: "2026-11-01",
+      landedCharges: 100,
+      lines: [{ productId: p, quantity: 10, unitPrice: 1000 }],
+    });
+    const orderId = snap.state.orders.at(-1).id;
+    for (const status of ["APPROVED", "ORDERED", "SHIPPED", "CUSTOMS"])
+      expect(
+        (
+          await command({
+            type: "order.transition",
+            companyId: a,
+            orderId,
+            status,
+          })
+        ).status,
+      ).toBe(201);
+    const userId = (await request("/auth/me", { cookie: viewerCookie })).body
+      .profile.id;
+    await command({
+      type: "access.grant",
+      companyId: a,
+      userId,
+      role: "BUYER",
+    });
+    expect(
+      (
+        await command(
+          {
+            type: "order.transition",
+            companyId: a,
+            orderId,
+            status: "RECEIVED",
+          },
+          viewerCookie,
+        )
+      ).status,
+    ).toBe(403);
+    await command({
+      type: "access.grant",
+      companyId: a,
+      userId,
+      role: "WAREHOUSE",
+    });
+    expect(
+      (
+        await command(
+          {
+            type: "order.receive",
+            companyId: a,
+            orderId,
+            reference: "ERP-BR",
+            lines: [{ productId: p, quantity: 4 }],
+          },
+          viewerCookie,
+        )
+      ).status,
+    ).toBe(201);
+    expect(
+      snap.state.invoices.filter(
+        (i: { companyId: string }) => i.companyId === a,
+      ),
+    ).toHaveLength(0);
+    expect(
+      snap.state.accounts.filter(
+        (i: { companyId: string }) => i.companyId === a,
+      ),
+    ).toHaveLength(0);
+    snap = (
+      await request(`/tenants/${tenantId}/business`, { cookie: ownerCookie })
+    ).body;
+    expect(
+      snap.state.orders.find((o: { id: string }) => o.id === orderId).status,
+    ).toBe("PARTIALLY_RECEIVED");
+    expect(
+      snap.state.invoices.find(
+        (i: { sourceId: string }) => i.sourceId === orderId,
+      ).amount,
+    ).toBe(4000);
+    await command({ type: "access.grant", companyId: a, userId, role: "HR" });
+    expect(
+      (
+        await command(
+          {
+            type: "hr.employee.create",
+            companyId: a,
+            fullName: "ERP HR Employee",
+            jobTitle: "Seller",
+            department: "Stores",
+            grossSalary: 100000,
+            employerChargesBps: 1800,
+            hiredAt: "2025-01-01",
+          },
+          viewerCookie,
+        )
+      ).status,
+    ).toBe(201);
+    expect(snap.hrCompanyIds).toContain(a);
+    expect(
+      snap.state.accounts.filter(
+        (i: { companyId: string }) => i.companyId === a,
+      ),
+    ).toHaveLength(0);
+    expect(
+      snap.state.orders.filter((i: { companyId: string }) => i.companyId === a),
+    ).toHaveLength(0);
+    expect(
+      (
+        await request(`/tenants/${tenantId}/hr/companies/${a}/employees`, {
+          cookie: viewerCookie,
+        })
+      ).body.some(
+        (e: { displayName: string }) => e.displayName === "ERP HR Employee",
+      ),
+    ).toBe(true);
+    snap = (
+      await request(`/tenants/${tenantId}/business`, { cookie: ownerCookie })
+    ).body;
+    await command({
+      type: "intercompany.create",
+      companyId: a,
+      toCompanyId: b,
+      reference: "ERP-IC",
+      description: "Shared service",
+      amount: 100000,
+      dueDate: "2026-11-01",
+    });
+    const ic = snap.state.intercompany.at(-1);
+    expect(
+      (
+        await command({
+          type: "intercompany.settle",
+          companyId: a,
+          chargeId: ic.id,
+          payerAccountId: bankB,
+          receiverAccountId: bankA,
+          amount: 20000,
+        })
+      ).status,
+    ).toBe(201);
+    expect(
+      snap.state.payments.filter((p: { invoiceId: string }) =>
+        [ic.receivableId, ic.payableId].includes(p.invoiceId),
+      ),
+    ).toHaveLength(2);
+  });
   it("revokes logged-out sessions server-side", async () => {
     expect(
       (

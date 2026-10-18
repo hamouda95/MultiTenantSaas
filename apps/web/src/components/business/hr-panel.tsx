@@ -14,6 +14,7 @@ type Props = {
   company: BusinessCompany;
   manage: boolean;
   finance: boolean;
+  accrue?: boolean;
   busy: boolean;
   run: (a: Record<string, unknown>) => Promise<boolean>;
 };
@@ -22,6 +23,7 @@ export function HrPanel({
   company: c,
   manage,
   finance,
+  accrue = false,
   busy,
   run,
 }: Props) {
@@ -68,7 +70,7 @@ export function HrPanel({
     )
       form.reset();
   }
-  if (!manage && !finance)
+  if (!manage && !finance && !accrue)
     return (
       <p>
         Les fiches et paies sont réservées à la direction et au rôle Finance.
@@ -234,7 +236,7 @@ export function HrPanel({
                       : "Non comptabilisé"}
                   </td>
                   <td className="flex flex-wrap gap-2 p-2">
-                    {finance && !p && e.status === "ACTIVE" && (
+                    {(finance || accrue) && !p && e.status === "ACTIVE" && (
                       <Button
                         size="sm"
                         disabled={busy || !period || e.grossSalary <= 0}

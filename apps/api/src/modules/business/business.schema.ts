@@ -55,6 +55,79 @@ export const BusinessCommandSchema = z
     commandId: id,
     version: z.number().int().min(0),
     action: z.discriminatedUnion("type", [
+      z
+        .object({
+          type: z.literal("order.receive"),
+          companyId: id,
+          orderId: id,
+          reference: text,
+          lines: z
+            .array(
+              z
+                .object({
+                  productId: id,
+                  quantity: z.number().int().min(1).max(1000000),
+                })
+                .strict(),
+            )
+            .min(1)
+            .max(100)
+            .refine(
+              (v) => new Set(v.map((x) => x.productId)).size === v.length,
+            ),
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("stock.ship"),
+          companyId: id,
+          reference: text,
+          fromId: id,
+          toId: id,
+          lines: z
+            .array(
+              z
+                .object({
+                  productId: id,
+                  quantity: z.number().int().min(1).max(1000000),
+                })
+                .strict(),
+            )
+            .min(1)
+            .max(100)
+            .refine(
+              (v) => new Set(v.map((x) => x.productId)).size === v.length,
+            ),
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("stock.receiveTransfer"),
+          companyId: id,
+          transferId: id,
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("intercompany.create"),
+          companyId: id,
+          toCompanyId: id,
+          reference: text,
+          description: text,
+          amount: positive,
+          dueDate: date,
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("intercompany.settle"),
+          companyId: id,
+          chargeId: id,
+          payerAccountId: id,
+          receiverAccountId: id,
+          amount: positive,
+        })
+        .strict(),
       z.object({ type: z.literal("company.create"), data: company }).strict(),
       z
         .object({
@@ -288,6 +361,9 @@ export const BusinessCommandSchema = z
             "MANAGER",
             "FINANCE",
             "OPERATIONS",
+            "BUYER",
+            "WAREHOUSE",
+            "HR",
             "VIEWER",
             "CASHIER",
             "STORE_MANAGER",

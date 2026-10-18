@@ -2,6 +2,7 @@ import {
   financingCashFlow,
   financingOutstanding,
   payrollCashFlow,
+  orderReceived,
 } from "@saas/types";
 import { applyPos } from "./pos.engine";
 import { randomUUID } from "node:crypto";
@@ -131,8 +132,8 @@ export function visibleBusiness(
       .filter(
         (g) =>
           g.userId === userId &&
-          hrAccess &&
-          ["MANAGER", "FINANCE"].includes(g.role) &&
+          ((hrAccess && ["MANAGER", "FINANCE"].includes(g.role)) ||
+            g.role === "HR") &&
           (!membershipId || g.membershipId === membershipId),
       )
       .map((g) => g.companyId),
@@ -144,7 +145,8 @@ export function visibleBusiness(
         ? (values as any[]).filter((x) => ids.has(x.id))
         : (values as any[]).filter(
             (x) =>
-              ids.has(x.companyId) &&
+              (ids.has(x.companyId) ||
+                (key === "intercompany" && ids.has(x.toCompanyId))) &&
               (!["employees", "payroll"].includes(key) ||
                 hrIds.has(x.companyId)) &&
               (key !== "access" || x.userId === userId),
@@ -176,7 +178,110 @@ export function visibleBusiness(
     if (p.paidAt) r.paid += p.total;
     sums.set(key, r);
   }
-  result.payrollSummary = [...sums.values()];
+  const restricted = new Set(
+    s.access
+      .filter(
+        (g) =>
+          g.userId === userId &&
+          ["BUYER", "WAREHOUSE", "HR"].includes(g.role) &&
+          (!membershipId || g.membershipId === membershipId),
+      )
+      .map((g) => g.companyId),
+  );
+  const warehouse = new Set(
+    s.access
+      .filter(
+        (g) =>
+          g.userId === userId &&
+          g.role === "WAREHOUSE" &&
+          (!membershipId || g.membershipId === membershipId),
+      )
+      .map((g) => g.companyId),
+  );
+  result.accounts = result.accounts.filter((x) => !restricted.has(x.companyId));
+  result.invoices = result.invoices.filter((x) => !restricted.has(x.companyId));
+  result.payments = result.payments.filter((x) => !restricted.has(x.companyId));
+  result.expenses = result.expenses.filter((x) => !restricted.has(x.companyId));
+  result.cashTransfers = result.cashTransfers.filter(
+    (x) => !restricted.has(x.companyId),
+  );
+  for (const key of [
+    "financings",
+    "financingPayments",
+    "intercompany",
+    "cashAdjustments",
+  ] as const)
+    (result as any)[key] = (result[key] || []).filter(
+      (x: any) => !restricted.has(x.companyId),
+    );
+  result.intercompany = (s.intercompany || []).filter(
+    (x) =>
+      (ids.has(x.companyId) && !restricted.has(x.companyId)) ||
+      (ids.has(x.toCompanyId) && !restricted.has(x.toCompanyId)),
+  );
+  result.products = result.products.map((p) =>
+    restricted.has(p.companyId) ? { ...p, cost: 0, salePrice: undefined } : p,
+  );
+  result.sales = result.sales.map((x) =>
+    restricted.has(x.companyId)
+      ? {
+          ...x,
+          total: 0,
+          cost: 0,
+          unitCosts: {},
+          lines: x.lines.map((l) => ({ ...l, unitPrice: 0 })),
+        }
+      : x,
+  );
+  result.orders = result.orders.map((o) =>
+    warehouse.has(o.companyId)
+      ? {
+          ...o,
+          landedCharges: 0,
+          lines: o.lines.map((l) => ({ ...l, unitPrice: 0 })),
+        }
+      : o,
+  );
+  result.samples = (result.samples || []).filter(
+    (x) => !warehouse.has(x.companyId),
+  );
+  result.receipts = (result.receipts || []).map((x) =>
+    warehouse.has(x.companyId) ? { ...x, landedCharges: 0 } : x,
+  );
+  result.transfers = (result.transfers || []).map((x) =>
+    warehouse.has(x.companyId)
+      ? { ...x, lines: x.lines.map((l) => ({ ...l, unitCost: 0 })) }
+      : x,
+  );
+  const hrOnly = new Set(
+    s.access
+      .filter(
+        (g) =>
+          g.userId === userId &&
+          g.role === "HR" &&
+          (!membershipId || g.membershipId === membershipId),
+      )
+      .map((g) => g.companyId),
+  );
+  for (const key of [
+    "products",
+    "partners",
+    "orders",
+    "receipts",
+    "transfers",
+    "sales",
+    "movements",
+    "samples",
+  ] as const)
+    (result as any)[key] = (result[key] || []).filter(
+      (x: any) => !hrOnly.has(x.companyId),
+    );
+  result.events = result.events.filter(
+    (x) => !hrOnly.has(x.companyId) || x.action.startsWith("hr."),
+  );
+  result.payrollSummary = [...sums.values()].filter(
+    (x) => !restricted.has(x.companyId),
+  );
   return result;
 }
 /** Executes only on a transaction-local copy; persisted atomically with audit. */
@@ -284,12 +389,53 @@ export function applyBusiness(
     "payment.create",
     "expense.create",
     "cash.transfer",
+    "intercompany.create",
+    "intercompany.settle",
     "financing.create",
     "financing.draw",
     "financing.repay",
     "hr.payroll.record",
     "hr.payroll.pay",
   ];
+  if (
+    role === "HR" &&
+    (!a.type.startsWith("hr.") || a.type === "hr.payroll.pay")
+  )
+    throw new ForbiddenException(
+      "Le service RH prépare la paie ; la finance effectue le règlement",
+    );
+  if (
+    role === "BUYER" &&
+    a.type === "order.transition" &&
+    a.status === "RECEIVED"
+  )
+    throw new ForbiddenException("Réception réservée à la logistique");
+  if (
+    role === "BUYER" &&
+    ![
+      "product.create",
+      "partner.create",
+      "partner.update",
+      "sample.create",
+      "order.create",
+      "order.transition",
+    ].includes(a.type)
+  )
+    throw new ForbiddenException("Opération non autorisée au service achats");
+  if (
+    role === "WAREHOUSE" &&
+    ![
+      "location.create",
+      "order.receive",
+      "stock.ship",
+      "stock.receiveTransfer",
+      "stock.transfer",
+    ].includes(a.type) &&
+    !(a.type === "order.transition" && a.status === "RECEIVED")
+  )
+    throw new ForbiddenException(
+      "Opération non autorisée au service logistique",
+    );
   if (
     role === "FINANCE" &&
     !finance.includes(a.type) &&
@@ -298,7 +444,7 @@ export function applyBusiness(
   )
     throw new ForbiddenException("Rôle financier requis pour cette opération");
   if (
-    role === "OPERATIONS" &&
+    ["OPERATIONS", "BUYER"].includes(role) &&
     (finance.includes(a.type) ||
       [
         "company.configure",
@@ -313,7 +459,7 @@ export function applyBusiness(
     throw new ForbiddenException("Approbation du responsable requise");
   if (
     (a.type.startsWith("hr.employee.") || a.type === "sample.approve") &&
-    role !== "MANAGER"
+    !["MANAGER", "HR"].includes(role)
   )
     throw new ForbiddenException("Responsable requis");
   if (a.type.startsWith("hr.") && !company.modules.includes("hr"))
@@ -389,6 +535,100 @@ export function applyBusiness(
   const requireCash = (accountId: string, amount: number) => {
     own(s.accounts, accountId);
     if (balance(s, accountId) < amount) fail("Solde enregistré insuffisant");
+  };
+  const recordReceipt = (
+    order: BusinessState["orders"][number],
+    reference: string,
+    lines: { productId: string; quantity: number }[],
+  ) => {
+    if (!["CUSTOMS", "PARTIALLY_RECEIVED"].includes(order.status))
+      fail("La commande doit être en douane ou partiellement réceptionnée");
+    if (
+      !company.modules.includes("inventory") ||
+      !company.modules.includes("finance")
+    )
+      fail("Activez les modules stock et finance avant réception");
+    referenceUnique(reference, s.receipts || []);
+    if (
+      !lines.length ||
+      new Set(lines.map((l) => l.productId)).size !== lines.length
+    )
+      fail("Lignes de réception invalides");
+    for (const l of lines) {
+      const ordered = order.lines.find((x) => x.productId === l.productId);
+      if (
+        !ordered ||
+        l.quantity <= 0 ||
+        !Number.isSafeInteger(l.quantity) ||
+        orderReceived(s, order.id, l.productId) + l.quantity > ordered.quantity
+      )
+        fail("Réception supérieure au reliquat ou variante étrangère");
+    }
+    const receiptId = randomUUID(),
+      invoiceId = randomUUID();
+    let charges = 0,
+      base = 0,
+      allocated = 0;
+    const qty = order.lines.reduce((n, l) => n + l.quantity, 0);
+    let allocatedQuantity = 0;
+    const allocations = new Map(
+      order.lines.map((l) => {
+        const before = allocatedQuantity;
+        allocatedQuantity += l.quantity;
+        return [
+          l.productId,
+          Math.round((order.landedCharges * allocatedQuantity) / qty) -
+            Math.round((order.landedCharges * before) / qty),
+        ];
+      }),
+    );
+    for (const l of lines) {
+      const ordered = order.lines.find((x) => x.productId === l.productId)!,
+        before = orderReceived(s, order.id, l.productId),
+        budget = allocations.get(l.productId)!;
+      const charge =
+        Math.round((budget * (before + l.quantity)) / ordered.quantity) -
+        Math.round((budget * before) / ordered.quantity);
+      charges = safe(charges + charge);
+      base = safe(base + safe(l.quantity * ordered.unitPrice));
+      receiptCost(
+        own(s.products, l.productId),
+        l.quantity,
+        (l.quantity * ordered.unitPrice + charge) / l.quantity,
+      );
+      movement(l.productId, order.locationId, l.quantity, "RECEIPT", order.id);
+    }
+    const count = (s.receipts || []).filter(
+      (r) => r.orderId === order.id,
+    ).length;
+    if (base > 0)
+      s.invoices.push({
+        id: invoiceId,
+        companyId,
+        kind: "PAYABLE",
+        reference: `PO:${order.reference}${count ? `:R${count + 1}` : ""}`,
+        partnerId: order.supplierId,
+        amount: base,
+        dueDate: order.dueDate,
+        sourceId: order.id,
+        createdAt: now,
+      });
+    s.receipts ??= [];
+    s.receipts.push({
+      id: receiptId,
+      companyId,
+      orderId: order.id,
+      reference,
+      lines,
+      landedCharges: charges,
+      ...(base > 0 ? { invoiceId } : {}),
+      date: now,
+    });
+    order.status = order.lines.every(
+      (l) => orderReceived(s, order.id, l.productId) === l.quantity,
+    )
+      ? "RECEIVED"
+      : "PARTIALLY_RECEIVED";
   };
   const id = randomUUID();
   switch (a.type) {
@@ -674,54 +914,207 @@ export function applyBusiness(
         ORDERED: ["SHIPPED", "CANCELLED"],
         SHIPPED: ["CUSTOMS"],
         CUSTOMS: ["RECEIVED"],
+        PARTIALLY_RECEIVED: ["RECEIVED"],
         RECEIVED: [],
         CANCELLED: [],
       };
       if (!next[order.status].includes(a.status))
         fail("Transition de commande non autorisée");
-      if (a.status === "RECEIVED") {
-        if (
-          !company.modules.includes("inventory") ||
-          !company.modules.includes("finance")
-        )
-          fail("Activez les modules stock et finance avant réception");
-        const base = totalLines(order.lines);
-        let allocated = 0;
-        const qty = order.lines.reduce((n, l) => n + l.quantity, 0);
-        order.lines.forEach((l, index) => {
-          const charge =
-            index === order.lines.length - 1
-              ? order.landedCharges - allocated
-              : Math.round((order.landedCharges * l.quantity) / qty);
-          allocated += charge;
-          receiptCost(
-            own(s.products, l.productId),
-            l.quantity,
-            (l.quantity * l.unitPrice + charge) / l.quantity,
-          );
-          movement(
-            l.productId,
-            order.locationId,
-            l.quantity,
-            "RECEIPT",
-            order.id,
-          );
-        });
-        if (base > 0)
-          s.invoices.push({
-            id: randomUUID(),
-            companyId,
-            kind: "PAYABLE",
-            reference: `PO:${order.reference}`,
-            partnerId: order.supplierId,
-            amount: base,
-            dueDate: order.dueDate,
-            sourceId: order.id,
-            createdAt: now,
-          });
-        // Freight/customs increase stock cost; their actual bills are entered separately.
-      }
+      if (a.status === "RECEIVED")
+        recordReceipt(
+          order,
+          `BR-${order.reference}-${(s.receipts || []).filter((r) => r.orderId === order.id).length + 1}`,
+          order.lines
+            .map((l) => ({
+              productId: l.productId,
+              quantity: l.quantity - orderReceived(s, order.id, l.productId),
+            }))
+            .filter((l) => l.quantity > 0),
+        );
       order.status = a.status;
+      break;
+    }
+    case "order.receive": {
+      recordReceipt(own(s.orders, a.orderId), a.reference, a.lines);
+      break;
+    }
+    case "stock.ship": {
+      if (a.fromId === a.toId) fail("Deux emplacements différents requis");
+      own(s.locations, a.fromId);
+      own(s.locations, a.toId);
+      referenceUnique(a.reference, s.transfers || []);
+      const lines = a.lines.map((l) => ({
+        ...l,
+        unitCost: own(s.products, l.productId).cost,
+      }));
+      for (const l of lines) {
+        safe(l.quantity * l.unitCost);
+        movement(l.productId, a.fromId, -l.quantity, "TRANSFER_OUT", id);
+      }
+      s.transfers ??= [];
+      s.transfers.push({
+        id,
+        companyId,
+        reference: a.reference,
+        fromId: a.fromId,
+        toId: a.toId,
+        lines,
+        status: "IN_TRANSIT",
+        date: now,
+      });
+      break;
+    }
+    case "stock.receiveTransfer": {
+      const t = own(s.transfers || [], a.transferId);
+      if (t.status !== "IN_TRANSIT") fail("Transfert déjà réceptionné");
+      for (const l of t.lines) {
+        receiptCost(own(s.products, l.productId), l.quantity, l.unitCost);
+        movement(l.productId, t.toId, l.quantity, "TRANSFER_IN", t.id);
+      }
+      t.status = "RECEIVED";
+      t.receivedAt = now;
+      break;
+    }
+    case "intercompany.create": {
+      const other = s.companies.find((c) => c.id === a.toCompanyId);
+      if (
+        !other ||
+        other.id === companyId ||
+        other.currency !== company.currency ||
+        (other.status && other.status !== "ACTIVE") ||
+        !other.modules.includes("finance")
+      )
+        fail("Contrepartie active dans la même devise requise");
+      if (
+        !["MANAGER", "FINANCE"].includes(
+          companyRole(s, a.toCompanyId, userId, owner, membershipId) || "",
+        )
+      )
+        throw new ForbiddenException(
+          "Accès financier requis aux deux sociétés",
+        );
+      referenceUnique(a.reference, s.intercompany || []);
+      if (
+        s.invoices.some(
+          (i) =>
+            [companyId, a.toCompanyId].includes(i.companyId) &&
+            i.reference.toLowerCase() === `IC:${a.reference}`.toLowerCase(),
+        )
+      )
+        fail("Référence intragroupe déjà utilisée dans le périmètre");
+      const counterpart = (
+        cid: string,
+        name: string,
+        kind: "CUSTOMER" | "SUPPLIER",
+      ) => {
+        const partnerId = randomUUID();
+        s.partners.push({
+          id: partnerId,
+          companyId: cid,
+          name: `Groupe · ${name}`,
+          kind,
+          email: "",
+        });
+        return partnerId;
+      };
+      const receivableId = randomUUID(),
+        payableId = randomUUID();
+      s.invoices.push({
+        id: receivableId,
+        companyId,
+        kind: "RECEIVABLE",
+        reference: `IC:${a.reference}`,
+        partnerId: counterpart(companyId, other!.name, "CUSTOMER"),
+        amount: a.amount,
+        dueDate: a.dueDate,
+        sourceId: id,
+        intercompanyId: id,
+        createdAt: now,
+      });
+      s.invoices.push({
+        id: payableId,
+        companyId: a.toCompanyId,
+        kind: "PAYABLE",
+        reference: `IC:${a.reference}`,
+        partnerId: counterpart(a.toCompanyId, company.name, "SUPPLIER"),
+        amount: a.amount,
+        dueDate: a.dueDate,
+        sourceId: id,
+        intercompanyId: id,
+        createdAt: now,
+      });
+      s.intercompany ??= [];
+      s.intercompany.push({
+        id,
+        companyId,
+        toCompanyId: a.toCompanyId,
+        reference: a.reference,
+        description: a.description,
+        amount: a.amount,
+        date: now,
+        receivableId,
+        payableId,
+      });
+      break;
+    }
+    case "intercompany.settle": {
+      const charge = own(s.intercompany || [], a.chargeId),
+        payer = s.accounts.find(
+          (x) =>
+            x.id === a.payerAccountId &&
+            x.companyId === charge.toCompanyId &&
+            x.kind === "BANK",
+        ),
+        receiver = own(s.accounts, a.receiverAccountId);
+      if (!payer || receiver.kind !== "BANK")
+        fail("Comptes bancaires des deux sociétés requis");
+      const other = s.companies.find((c) => c.id === charge.toCompanyId);
+      if (
+        !other ||
+        (other.status && other.status !== "ACTIVE") ||
+        !other.modules.includes("finance")
+      )
+        fail("Société débitrice inactive");
+      if (
+        !["MANAGER", "FINANCE"].includes(
+          companyRole(s, charge.toCompanyId, userId, owner, membershipId) || "",
+        )
+      )
+        throw new ForbiddenException(
+          "Accès financier requis aux deux sociétés",
+        );
+      const rec = own(s.invoices, charge.receivableId),
+        pay = s.invoices.find(
+          (i) =>
+            i.id === charge.payableId && i.companyId === charge.toCompanyId,
+        );
+      if (
+        !pay ||
+        a.amount > outstanding(s, rec) ||
+        a.amount > outstanding(s, pay) ||
+        a.amount > balance(s, payer!.id)
+      )
+        fail("Montant supérieur au solde ou aux disponibilités");
+      if (date < payer!.asOf || date < receiver.asOf)
+        fail("Règlement antérieur au solde initial");
+      s.payments.push(
+        {
+          id,
+          companyId,
+          invoiceId: rec.id,
+          accountId: receiver.id,
+          amount: a.amount,
+          date: now,
+        },
+        {
+          id: randomUUID(),
+          companyId: charge.toCompanyId,
+          invoiceId: pay!.id,
+          accountId: payer!.id,
+          amount: a.amount,
+          date: now,
+        },
+      );
       break;
     }
     case "stock.adjust": {
@@ -806,7 +1199,7 @@ export function applyBusiness(
       break;
     }
     case "invoice.create": {
-      if (/^(PO|SALE):/i.test(a.reference))
+      if (/^(PO|SALE|IC):/i.test(a.reference))
         fail("Préfixe réservé aux factures automatiques");
       referenceUnique(a.reference, s.invoices);
       if (
@@ -820,6 +1213,10 @@ export function applyBusiness(
     case "payment.create": {
       const invoice = own(s.invoices, a.invoiceId);
       const account = own(s.accounts, a.accountId);
+      if (invoice.intercompanyId)
+        fail(
+          "Utilisez le règlement intragroupe pour synchroniser les deux sociétés",
+        );
       if (date < account.asOf) fail("Paiement antérieur au solde initial");
       if (a.amount > outstanding(s, invoice))
         fail("Le paiement dépasse le solde de la facture");
