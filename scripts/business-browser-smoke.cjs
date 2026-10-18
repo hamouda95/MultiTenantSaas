@@ -250,16 +250,17 @@ let failurePage;
   );
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page
+    .getByRole("combobox", { name: "Société", exact: true })
+    .selectOption(companyId);
+  await page
     .getByRole("button", { name: "Achats & imports", exact: true })
     .click();
-  const funding = page
-    .locator("form")
-    .filter({
-      has: page.getByRole("button", {
-        name: "Enregistrer le financement",
-        exact: true,
-      }),
-    });
+  const funding = page.locator("form").filter({
+    has: page.getByRole("button", {
+      name: "Enregistrer le financement",
+      exact: true,
+    }),
+  });
   await funding
     .getByLabel("Référence financement", { exact: true })
     .fill("LOAN-BROWSER");
@@ -283,14 +284,12 @@ let failurePage;
   response = await context.request.get(`/api/v1/tenants/${tenantId}/business`);
   snap = await response.json();
   const loanId = snap.state.financings[0].id;
-  const repayment = page
-    .locator("form")
-    .filter({
-      has: page.getByRole("button", {
-        name: "Enregistrer le remboursement",
-        exact: true,
-      }),
-    });
+  const repayment = page.locator("form").filter({
+    has: page.getByRole("button", {
+      name: "Enregistrer le remboursement",
+      exact: true,
+    }),
+  });
   await repayment
     .getByLabel("Crédit à rembourser", { exact: true })
     .selectOption(loanId);
@@ -302,11 +301,9 @@ let failurePage;
     .getByRole("button", { name: "Enregistrer le remboursement", exact: true })
     .click();
   await page.getByText(/Capital 40,000/).waitFor();
-  const article = page
-    .locator("form")
-    .filter({
-      has: page.getByRole("button", { name: "Créer l’article", exact: true }),
-    });
+  const article = page.locator("form").filter({
+    has: page.getByRole("button", { name: "Créer l’article", exact: true }),
+  });
   await article
     .getByLabel("Code modèle (ex. T9800)", { exact: true })
     .fill("T9800");
@@ -406,7 +403,9 @@ let failurePage;
   await page
     .getByRole("button", { name: "Créer le client en Caisse", exact: true })
     .click();
-  await page.getByRole("option", { name: /Amira Browser/ }).waitFor();
+  await page
+    .getByRole("option", { name: /Amira Browser/ })
+    .waitFor({ state: "attached" });
   await page
     .getByLabel("Client de la vente", { exact: true })
     .selectOption({ label: "Amira Browser · +21612345678" });
