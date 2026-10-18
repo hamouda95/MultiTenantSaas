@@ -16,12 +16,12 @@ Cette holding est isolée des sociétés réelles. Trois sociétés, dix magasin
 
 | Société           |    CA net | Marge brute | Coût employeur | Résultat avant impôts et amortissements |
 | ----------------- | --------: | ----------: | -------------: | --------------------------------------: |
-| Polaris Footwear  | 1 320 000 |     770 000 |        269 040 |                                 360 560 |
-| Atlas Sports      |   787 200 |     460 020 |        195 408 |                                 167 412 |
+| Polaris Footwear  | 1 332 000 |     782 000 |        269 040 |                                 372 560 |
+| Atlas Sports      |   787 200 |     460 020 |        195 408 |                                 155 412 |
 | Nova Distribution |   537 200 |     314 420 |        158 592 |                                  80 228 |
-| Groupe            | 2 644 400 |   1 544 440 |        623 040 |                                 608 200 |
+| Groupe consolidé  | 2 644 400 |   1 544 440 |        623 040 |                                 608 200 |
 
-Ce P&L est un rapport de gestion : il exclut TVA, amortissements, impôts et éliminations intragroupe. Les sociétés partagent la devise TND ; les devises différentes sont affichées séparément, sans conversion implicite. Les ventes et retours sont reconnus à leur date ; la paie est affectée à son mois ; les autres charges et intérêts suivent les écritures saisies. Le capital emprunté et remboursé n'est pas une recette ou une charge. Le stock n'est passé en coût vendu qu'à la vente.
+Les contributions des sociétés comprennent une prestation logistique interne fictive de 12 000 TND facturée par Polaris à Atlas. La ligne groupe élimine cette prestation du CA et des charges ; son résultat reste inchangé. Ce P&L est un rapport de gestion : il exclut TVA, amortissements et impôts, et élimine uniquement les prestations internes enregistrées dans le périmètre. Les sociétés partagent la devise TND ; les devises différentes sont affichées séparément, sans conversion implicite. Les ventes et retours sont reconnus à leur date ; la paie est affectée à son mois ; les autres charges et intérêts suivent les écritures saisies. Le capital emprunté et remboursé n'est pas une recette ou une charge. Le stock n'est passé en coût vendu qu'à la vente.
 
 Le module RH suit les fiches et le coût employeur global. Le taux de charges de 18 % est une hypothèse fictive, pas un taux légal. Les règlements ne ventilent pas net salarié, retenues et organismes sociaux. Les contrats et demandes de congés sont accessibles dans « Contrats & congés », avec le même registre de salariés. Le contrat effectif au premier jour du mois fournit le brut d’une nouvelle comptabilisation. Les écritures déjà comptabilisées restent figées. Les bulletins légaux, le pointage et les déclarations sociales ne sont pas implémentés.
 
@@ -30,3 +30,15 @@ Le module RH suit les fiches et le coût employeur global. Le taux de charges de
 Après compilation : `node scripts/build-holding-demo.cjs /tmp/holding-demo.json USER_UUID`. Ce script est hors ligne, utilise les commandes validées et le moteur métier réel, contrôle stocks, soldes, clôtures et taille du registre. Les identifiants sont nouveaux à chaque génération. Il n'accède à aucune base et ne supprime rien. L'installation doit créer un nouveau workspace explicitement fictif, un propriétaire et les paramètres standards dans une transaction. Ne jamais remplacer le registre d'un client existant.
 
 Le visuel `apps/web/public/demo/supplier-samples.png` est généré, sans marque réelle. Prompt : photographie catalogue de cinq sneakers basses sans marque, même modèle, noir/blanc/bleu marine/bordeaux/beige, fond ivoire, lumière douce, sans personne, logo ni texte. Mode : génération originale, aucune photo fournisseur réelle utilisée.
+
+## Nouveaux parcours ERP
+
+Le sélecteur « Espace métier » propose Direction, Achats, Logistique, Ventes, Finance et RH. Un choix d'espace ne change pas les droits du compte. Les rôles réels se donnent dans « Accès sociétés » : Achats, Logistique et RH ont des autorisations distinctes contrôlées par l'API.
+
+Après extension de la démonstration :
+
+- Commande `DEMO-ERP-ACHAT-PARTIEL` : 100 articles, bon `DEMO-ERP-BR-40` de 40 articles, reliquat de 60 à réceptionner.
+- Transfert `DEMO-ERP-TRANSIT-10` : 10 articles expédiés vers un magasin, à confirmer à destination. La valeur en transit reste au groupe.
+- Prestation `DEMO-ERP-SERVICES-2025` : 12 000 TND de logistique interne ; montrer les pièces des deux sociétés puis le passage du CA avant élimination au CA consolidé dans « Pilotage groupe ».
+
+Ces exemples s'ajoutent au registre de démonstration, sans réinitialiser les manipulations déjà effectuées. Voir aussi `docs/ERP-METIERS-FR.md` pour les droits, les contrôles et les limites opérationnelles.
