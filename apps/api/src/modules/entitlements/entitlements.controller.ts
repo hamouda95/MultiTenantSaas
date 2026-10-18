@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { Controller, Get, Patch, Body, Param, UseGuards, UsePipes } from '@nestjs/common';
 import { EntitlementsService } from './entitlements.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -21,11 +22,10 @@ export class EntitlementsController {
 
   @Patch('modules/:moduleKey')
   @RequirePermissions('modules:manage')
-  @UsePipes(new ZodValidationPipe(ToggleModuleDtoSchema))
   async toggleModule(
     @CurrentTenant() tenant: TenantContext,
-    @Param('moduleKey') moduleKey: string,
-    @Body() body: ToggleModuleDto,
+    @Param('moduleKey', new ZodValidationPipe(z.enum(['ai_chat','rag_documents','predictive_analytics','agent_tools','nl_sql']))) moduleKey: string,
+    @Body(new ZodValidationPipe(ToggleModuleDtoSchema)) body: ToggleModuleDto,
   ) {
     return this.entitlementsService.toggleModule(
       tenant.tenantId,

@@ -1,53 +1,94 @@
-import { Controller, Post, Get, Body, UseGuards, UsePipes } from '@nestjs/common';
-import { IdentityService } from './identity.service';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { AuthenticatedUserContext } from '@saas/types';
-import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import { LoginDto, LoginDtoSchema } from '../../common/dto/auth.dto';
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  UseGuards,
+  Res,
+  Req,
+} from "@nestjs/common";
+import type { Response, Request } from "express";
+import { z } from "zod";
+import { IdentityService } from "./identity.service";
+import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
+import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { AuthenticatedUserContext, User } from "@saas/types";
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import {
+  LoginDto,
+  LoginDtoSchema,
+  RegisterDtoSchema,
+} from "../../common/dto/auth.dto";
+import { cookieOptions, sessionCookie } from "../../common/auth-security";
 
-@Controller('api/v1/auth')
+@Controller("api/v1/auth")
 export class IdentityController {
   constructor(private readonly identityService: IdentityService) {}
 
-  @Post('login')
-  @UsePipes(new ZodValidationPipe(LoginDtoSchema))
-  async login(@Body() body: LoginDto) {
-    let user = await this.identityService.findByEmail(body.email);
-    if (!user) {
-      // In development / test environment, auto-provision user if does not exist
-      user = await this.identityService.createUser({
-        email: body.email,
-        fullName: body.email.split('@')[0],
-      });
-    }
-
-    const token = await this.identityService.generateToken(user);
-    const workspaces = await this.identityService.getUserWorkspaces(user.id);
-
+  private async session(user: User, response: Response) {
+    response.cookie(
+      sessionCookie,
+      await this.identityService.generateToken(user),
+      cookieOptions(),
+    );
     return {
-      token,
-      user: {
-        id: user.id,
-        email: user.email,
-        fullName: user.fullName,
-        isPlatformAdmin: user.isPlatformAdmin,
-      },
-      workspaces,
+      user,
+      workspaces: await this.identityService.getUserWorkspaces(user.id),
     };
   }
 
-  @Get('me')
-  @UseGuards(JwtAuthGuard)
-  async getProfile(@CurrentUser() user: AuthenticatedUserContext) {
-    const profile = await this.identityService.findByEmail(user.email);
-    return { profile };
+  @Post("login")
+  async login(
+    @Body(new ZodValidationPipe(LoginDtoSchema)) body: LoginDto,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    return this.session(
+      await this.identityService.authenticate(body.email, body.password),
+      response,
+    );
   }
 
-  @Get('workspaces')
+  @Post("register")
+  async register(
+    @Body(new ZodValidationPipe(RegisterDtoSchema))
+    body: z.infer<typeof RegisterDtoSchema>,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    return this.session(
+      await this.identityService.register(
+        body.email,
+        body.password,
+        body.fullName,
+        body.invitationToken,
+      ),
+      response,
+    );
+  }
+
+  @Post("logout")
+  async logout(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    await this.identityService.revokeSession(request.headers.cookie);
+    response.clearCookie(sessionCookie, {
+      ...cookieOptions(),
+      maxAge: undefined,
+    });
+    return { success: true };
+  }
+
+  @Get("me")
+  @UseGuards(JwtAuthGuard)
+  async getProfile(@CurrentUser() user: AuthenticatedUserContext) {
+    return { profile: await this.identityService.findByEmail(user.email) };
+  }
+
+  @Get("workspaces")
   @UseGuards(JwtAuthGuard)
   async getWorkspaces(@CurrentUser() user: AuthenticatedUserContext) {
-    const workspaces = await this.identityService.getUserWorkspaces(user.userId);
-    return { workspaces };
+    return {
+      workspaces: await this.identityService.getUserWorkspaces(user.userId),
+    };
   }
 }

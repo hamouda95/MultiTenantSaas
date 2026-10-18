@@ -1,11 +1,14 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { jwtSecret } from './common/auth-security';
 import { Logger } from '@nestjs/common';
 
 async function bootstrap() {
+  jwtSecret();
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
+  app.enableShutdownHooks();
 
   // Enable CORS with tenant-safe header allowance
   app.enableCors({

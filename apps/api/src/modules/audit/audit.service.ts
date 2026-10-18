@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable, Inject } from '@nestjs/common';
 import { RlsPostgresService } from '../../database/rls-postgres.service';
 import { AuditLog } from '@saas/types';
@@ -19,7 +20,7 @@ export class AuditService {
     userAgent?: string | null;
     payload?: Record<string, unknown>;
   }): Promise<AuditLog> {
-    const id = `aud-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const id = randomUUID();
     const payload = data.payload || {};
 
     const res = await this.rlsDb.queryInTenantContext<AuditLog>(

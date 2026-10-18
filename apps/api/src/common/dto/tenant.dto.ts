@@ -18,7 +18,7 @@ export type CreateTenantDto = z.infer<typeof CreateTenantDtoSchema>;
 
 export const AddMemberDtoSchema = z.object({
   email: z.string().email('Valid email address required').max(255),
-  role: z.string().min(2).max(64).optional().default('Member'),
+  role: z.enum(['Owner','Member','Viewer']).optional().default('Member'),
 });
 
 export type AddMemberDto = z.infer<typeof AddMemberDtoSchema>;

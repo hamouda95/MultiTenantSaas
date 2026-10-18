@@ -1,10 +1,19 @@
-import { Injectable, ForbiddenException, NotFoundException, Inject } from '@nestjs/common';
-import { RlsPostgresService } from '../../database/rls-postgres.service';
-import { TenantModule, TenantQuota } from '@saas/types';
+import { TenantContextService } from "../../common/tenant-context";
+import { randomUUID } from "node:crypto";
+import {
+  Injectable,
+  ForbiddenException,
+  NotFoundException,
+  Inject,
+} from "@nestjs/common";
+import { RlsPostgresService } from "../../database/rls-postgres.service";
+import { TenantModule, TenantQuota } from "@saas/types";
 
 @Injectable()
 export class EntitlementsService {
-  constructor(@Inject(RlsPostgresService) private readonly rlsDb: RlsPostgresService) {}
+  constructor(
+    @Inject(RlsPostgresService) private readonly rlsDb: RlsPostgresService,
+  ) {}
 
   /**
    * Retrieves all modules and their enabled state for the tenant.
@@ -30,16 +39,34 @@ export class EntitlementsService {
     isEnabled: boolean,
     configuration: Record<string, unknown> = {},
   ): Promise<TenantModule> {
-    const res = await this.rlsDb.queryInTenantContext<TenantModule>(
-      tenantId,
-      `INSERT INTO tenant_modules (id, tenant_id, module_key, is_enabled, configuration)
+    return this.rlsDb.runInTenantContext(tenantId, async (client) => {
+      const res = await client.query<TenantModule>(
+        `INSERT INTO tenant_modules (id, tenant_id, module_key, is_enabled, configuration)
        VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (tenant_id, module_key)
        DO UPDATE SET is_enabled = EXCLUDED.is_enabled, configuration = EXCLUDED.configuration, updated_at = NOW()
        RETURNING id, tenant_id as "tenantId", module_key as "moduleKey", is_enabled as "isEnabled", configuration, created_at as "createdAt", updated_at as "updatedAt"`,
-      [`mod-${tenantId}-${moduleKey}`, tenantId, moduleKey, isEnabled, JSON.stringify(configuration)],
-    );
-    return res.rows[0];
+        [
+          randomUUID(),
+          tenantId,
+          moduleKey,
+          isEnabled,
+          JSON.stringify(configuration),
+        ],
+      );
+      await client.query(
+        `INSERT INTO audit_logs (id,tenant_id,actor_id,action,resource_type,resource_id) VALUES ($1,$2,$3,$4,$5,$6)`,
+        [
+          randomUUID(),
+          tenantId,
+          TenantContextService.get()?.user?.userId || null,
+          "module.updated",
+          "module",
+          tenantId,
+        ],
+      );
+      return res.rows[0];
+    });
   }
 
   /**
@@ -84,13 +111,19 @@ export class EntitlementsService {
   /**
    * Pre-execution budget gate: throws ForbiddenException if the requested usage would exceed tenant limits.
    */
-  async checkAiBudget(tenantId: string, estimatedTokens = 1000, estimatedCost = 0.02): Promise<boolean> {
+  async checkAiBudget(
+    tenantId: string,
+    estimatedTokens = 1000,
+    estimatedCost = 0.02,
+  ): Promise<boolean> {
     const quota = await this.getQuota(tenantId);
 
     const tokenBudgetExceeded =
-      Number(quota.currentAiTokensUsed) + estimatedTokens > Number(quota.monthlyAiTokenBudget);
+      Number(quota.currentAiTokensUsed) + estimatedTokens >
+      Number(quota.monthlyAiTokenBudget);
     const costBudgetExceeded =
-      Number(quota.currentAiCostUsed) + estimatedCost > Number(quota.monthlyAiCostBudget);
+      Number(quota.currentAiCostUsed) + estimatedCost >
+      Number(quota.monthlyAiCostBudget);
 
     if (tokenBudgetExceeded || costBudgetExceeded) {
       throw new ForbiddenException(
@@ -104,7 +137,11 @@ export class EntitlementsService {
   /**
    * Atomically records usage consumption into the quota counter.
    */
-  async recordAiConsumption(tenantId: string, tokensUsed: number, costIncurred: number): Promise<void> {
+  async recordAiConsumption(
+    tenantId: string,
+    tokensUsed: number,
+    costIncurred: number,
+  ): Promise<void> {
     await this.rlsDb.queryInTenantContext(
       tenantId,
       `UPDATE tenant_quotas

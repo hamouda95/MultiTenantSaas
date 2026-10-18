@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const UpdateSettingsDtoSchema = z.object({
-  logoUrl: z.string().url('Logo must be a valid URL').optional().nullable(),
+  logoUrl: z.string().url('Logo must be a valid URL').refine(v => /^https?:\/\//i.test(v), 'Logo must use HTTP or HTTPS').optional().nullable(),
   primaryColor: z
     .string()
     .regex(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, 'Primary color must be a valid hex color code')

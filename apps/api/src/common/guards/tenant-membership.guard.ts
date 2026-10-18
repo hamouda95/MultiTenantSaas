@@ -31,6 +31,11 @@ export class TenantMembershipGuard implements CanActivate {
       throw new BadRequestException('A target tenant must be specified via x-tenant-id header or path');
     }
 
+    if (request.params?.tenantId && request.headers['x-tenant-id'] && request.params.tenantId !== request.headers['x-tenant-id']) {
+      throw new BadRequestException('Tenant header and route must match');
+    }
+    if (typeof requestedTenantId !== 'string') throw new BadRequestException('Invalid tenant ID');
+
     // UUID format validation to prevent SQL injection or malformed strings
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(requestedTenantId)) {
@@ -57,8 +62,9 @@ export class TenantMembershipGuard implements CanActivate {
     const membershipResult = await this.rlsDb.queryAdmin(
       `SELECT m.id AS membership_id, m.status, r.name AS role_name, p.key AS permission_key
        FROM memberships m
-       LEFT JOIN membership_roles mr ON mr.membership_id = m.id
-       LEFT JOIN roles r ON r.id = mr.role_id
+       JOIN tenants t ON t.id = m.tenant_id AND t.status = 'ACTIVE'
+       LEFT JOIN membership_roles mr ON mr.membership_id = m.id AND mr.tenant_id = m.tenant_id
+       LEFT JOIN roles r ON r.id = mr.role_id AND r.tenant_id = m.tenant_id
        LEFT JOIN role_permissions rp ON rp.role_id = r.id
        LEFT JOIN permissions p ON p.id = rp.permission_id
        WHERE m.tenant_id = $1 AND m.user_id = $2 AND m.status = 'ACTIVE'`,
