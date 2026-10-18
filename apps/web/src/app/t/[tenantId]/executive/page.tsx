@@ -23,7 +23,7 @@ export default function ExecutiveDashboard() {
     stores: data.state.locations.filter((l) => l.companyId === company.id && l.kind === "STORE").length,
   })) ?? [], [data]);
   if (isLoading) return <p role="status" className="text-muted">Chargement des indicateurs…</p>;
-  if (error) return <ErrorState message={error instanceof Error ? error.message : "Indicateurs indisponibles"} onRetry={() => void refetch()} />;
+  if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
   const currencies = new Set(companies.map((x) => x.company.currency));
   const commonCurrency = currencies.size === 1 ? companies[0]?.company.currency : null;
   const total = (key: keyof ReturnType<typeof companyMetrics>) =>
