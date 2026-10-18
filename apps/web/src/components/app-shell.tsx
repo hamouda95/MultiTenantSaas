@@ -33,6 +33,7 @@ import { CreateWorkspaceDialog } from "@/components/create-workspace-dialog";
 const NAV = [
   { href: "/pos", label: "Caisse", icon: LayoutDashboard },
   { href: "/business", label: "Gestion du holding", icon: LayoutDashboard },
+  { href: "/hr", label: "Contrats & congés", icon: Users },
   { href: "/platform", label: "Administration SaaS", icon: Puzzle },
   { href: "/members", label: "Membres", icon: Users },
   { href: "/modules", label: "Modules", icon: Puzzle },

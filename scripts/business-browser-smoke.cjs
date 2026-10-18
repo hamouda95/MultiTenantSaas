@@ -586,6 +586,27 @@ let failurePage;
     path: "test-results/pnl-desktop.png",
     fullPage: true,
   });
+  await page.goto(`/t/${tenantId}/hr`);
+  await page
+    .getByRole("heading", { name: "Contrats & congés", exact: true })
+    .waitFor();
+  await page.getByText(/Salarié Browser — depuis/).waitFor();
+  const leaveForm = page
+    .locator("form")
+    .filter({
+      has: page.getByRole("button", { name: "Demander un congé", exact: true }),
+    });
+  await leaveForm.getByLabel("Du", { exact: true }).fill("2026-11-01");
+  await leaveForm.getByLabel("Au", { exact: true }).fill("2026-11-03");
+  await leaveForm
+    .getByRole("button", { name: "Demander un congé", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Approuver", exact: true }).click();
+  await page.getByText(/2026-11-01.*APPROVED/).waitFor();
+  await page.screenshot({
+    path: "test-results/hr-contracts-leave.png",
+    fullPage: true,
+  });
   await page.goto("/administration");
   await page
     .getByRole("heading", { name: "Administration des holdings", exact: true })

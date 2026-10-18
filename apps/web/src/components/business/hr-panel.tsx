@@ -1,4 +1,6 @@
 "use client";
+import Link from "next/link";
+import { useParams } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import {
   currencyDigits,
@@ -23,6 +25,7 @@ export function HrPanel({
   busy,
   run,
 }: Props) {
+  const { tenantId } = useParams<{ tenantId: string }>();
   const [period, setPeriod] = useState(new Date().toISOString().slice(0, 7));
   const [account, setAccount] = useState("");
   const [error, setError] = useState("");
@@ -80,6 +83,9 @@ export function HrPanel({
         de déclaration sociale. Le règlement représente le coût employeur global
         et ne ventile pas les retenues et cotisations.
       </p>
+      <Link className="text-sm text-brand underline" href={`/t/${tenantId}/hr`}>
+        Consulter les contrats et demandes de congés
+      </Link>
       {manage && (
         <form
           onSubmit={create}
@@ -231,7 +237,7 @@ export function HrPanel({
                     {finance && !p && e.status === "ACTIVE" && (
                       <Button
                         size="sm"
-                        disabled={busy || !period}
+                        disabled={busy || !period || e.grossSalary <= 0}
                         onClick={() =>
                           run({
                             type: "hr.payroll.record",

@@ -521,6 +521,7 @@ export function applyBusiness(
       const e = own(s.employees || [], a.employeeId);
       if (
         e.status !== "ACTIVE" ||
+        e.grossSalary <= 0 ||
         a.period < e.hiredAt.slice(0, 7) ||
         a.period > date.slice(0, 7)
       )

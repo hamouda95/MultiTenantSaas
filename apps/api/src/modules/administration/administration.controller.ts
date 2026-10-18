@@ -145,6 +145,9 @@ export class AdministrationController {
         "tenant_modules",
         "tenant_quotas",
         "roles",
+        "hr_employees",
+        "hr_contracts",
+        "hr_leave_requests",
       ])
         data[table] = (
           await client.query(`SELECT * FROM ${table} WHERE tenant_id=$1`, [id])

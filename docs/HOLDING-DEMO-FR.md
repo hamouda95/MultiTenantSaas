@@ -23,7 +23,7 @@ Cette holding est isolée des sociétés réelles. Trois sociétés, dix magasin
 
 Ce P&L est un rapport de gestion : il exclut TVA, amortissements, impôts et éliminations intragroupe. Les sociétés partagent la devise TND ; les devises différentes sont affichées séparément, sans conversion implicite. Les ventes et retours sont reconnus à leur date ; la paie est affectée à son mois ; les autres charges et intérêts suivent les écritures saisies. Le capital emprunté et remboursé n'est pas une recette ou une charge. Le stock n'est passé en coût vendu qu'à la vente.
 
-Le module RH suit les fiches et le coût employeur global. Le taux de charges de 18 % est une hypothèse fictive, pas un taux légal. Les règlements ne ventilent pas net salarié, retenues et organismes sociaux. Les bulletins légaux, congés, pointage et déclarations sociales ne sont pas implémentés dans ce parcours.
+Le module RH suit les fiches et le coût employeur global. Le taux de charges de 18 % est une hypothèse fictive, pas un taux légal. Les règlements ne ventilent pas net salarié, retenues et organismes sociaux. Les contrats et demandes de congés sont accessibles dans « Contrats & congés », avec le même registre de salariés. Le contrat effectif au premier jour du mois fournit le brut d’une nouvelle comptabilisation. Les écritures déjà comptabilisées restent figées. Les bulletins légaux, le pointage et les déclarations sociales ne sont pas implémentés.
 
 ## Reproduction et installation
 

@@ -854,6 +854,153 @@ describe.skipIf(!live)("Real PostgreSQL API and RLS integration", () => {
         .status,
     ).toBe(200);
   });
+  it("shares employees/contracts with HR cost tracking and isolates real HR rows", async () => {
+    let snap = (
+      await request(`/tenants/${tenantId}/business`, { cookie: ownerCookie })
+    ).body;
+    async function cmd(action: Record<string, unknown>) {
+      const r = await request(`/tenants/${tenantId}/business/commands`, {
+        method: "POST",
+        cookie: ownerCookie,
+        body: { commandId: randomUUID(), version: snap.version, action },
+      });
+      expect(r.status).toBe(201);
+      snap = r.body;
+    }
+    await cmd({
+      type: "company.create",
+      data: {
+        name: "HR integration",
+        currency: "TND",
+        country: "Tunisie",
+        brands: [],
+        leadDays: 30,
+        coverDays: 30,
+        minimumStock: 5,
+        modules: ["hr", "finance"],
+      },
+    });
+    const companyId = snap.state.companies.at(-1).id;
+    await cmd({
+      type: "account.create",
+      companyId,
+      name: "HR Bank",
+      kind: "BANK",
+      opening: 10000000,
+      asOf: "2025-01-01",
+    });
+    const accountId = snap.state.accounts.at(-1).id;
+    await cmd({
+      type: "hr.employee.create",
+      companyId,
+      fullName: "Private HR employee",
+      jobTitle: "Seller",
+      department: "Stores",
+      grossSalary: 1000000,
+      employerChargesBps: 1800,
+      hiredAt: "2025-01-01",
+    });
+    const employeeId = snap.state.employees.at(-1).id;
+    const route = `/tenants/${tenantId}/hr/companies/${companyId}`;
+    expect(
+      (await request(route + "/employees", { cookie: ownerCookie })).body[0].id,
+    ).toBe(employeeId);
+    expect(
+      (await request(route + "/contracts", { cookie: ownerCookie })).body[0]
+        .monthlyGrossMinor,
+    ).toBe("1000000");
+    expect(
+      (await request(route + "/contracts", { cookie: viewerCookie })).status,
+    ).toBe(403);
+    expect(
+      (await request(route + "/employees", { cookie: otherCookie })).status,
+    ).toBe(403);
+    const contract = await request(route + "/contracts", {
+      method: "POST",
+      cookie: ownerCookie,
+      body: {
+        employeeId,
+        startDate: "2026-01-01",
+        monthlyGrossMinor: 2000000,
+        currency: "TND",
+      },
+    });
+    expect(contract.status).toBe(201);
+    snap = (
+      await request(`/tenants/${tenantId}/business`, { cookie: ownerCookie })
+    ).body;
+    await cmd({
+      type: "hr.payroll.record",
+      companyId,
+      employeeId,
+      period: new Date().toISOString().slice(0, 7),
+    });
+    expect(snap.state.payroll.at(-1).total).toBe(2360000);
+    await cmd({
+      type: "hr.payroll.pay",
+      companyId,
+      payrollId: snap.state.payroll.at(-1).id,
+      accountId,
+    });
+    const leave = await request(route + "/leave", {
+      method: "POST",
+      cookie: ownerCookie,
+      body: { employeeId, startsOn: "2026-11-01", endsOn: "2026-11-03" },
+    });
+    expect(leave.status).toBe(201);
+    expect(
+      (
+        await request(route + "/leave/" + leave.body.id, {
+          method: "PATCH",
+          cookie: ownerCookie,
+          body: { status: "APPROVED" },
+        })
+      ).status,
+    ).toBe(200);
+    const client = await restricted.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT set_config('app.current_tenant_id',$1,true)", [
+        otherTenantId,
+      ]);
+      expect(
+        (
+          await client.query("SELECT id FROM hr_employees WHERE id=$1", [
+            employeeId,
+          ])
+        ).rows,
+      ).toHaveLength(0);
+      expect(
+        (
+          await client.query(
+            "SELECT id FROM hr_contracts WHERE employee_id=$1",
+            [employeeId],
+          )
+        ).rows,
+      ).toHaveLength(0);
+      expect(
+        (
+          await client.query(
+            "SELECT id FROM hr_leave_requests WHERE employee_id=$1",
+            [employeeId],
+          )
+        ).rows,
+      ).toHaveLength(0);
+      await client.query("ROLLBACK");
+    } finally {
+      client.release();
+    }
+    const exported = await request(
+      `/administration/holdings/${tenantId}/export`,
+      { method: "POST", cookie: ownerCookie, body: {} },
+    );
+    expect(exported.status).toBe(201);
+    expect(
+      exported.body.hr_employees.some(
+        (e: { id: string }) => e.id === employeeId,
+      ),
+    ).toBe(true);
+  });
   it("revokes logged-out sessions server-side", async () => {
     expect(
       (

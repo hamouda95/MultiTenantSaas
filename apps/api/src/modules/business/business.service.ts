@@ -140,6 +140,28 @@ export class BusinessService {
           );
         targetMembershipId = member.rows[0].id;
       }
+      // A contract effective on the first day of the payroll month supplies the salary.
+      // No automatic prorating or statutory payroll is claimed by this cost tracker.
+      if (command.action.type === "hr.payroll.record") {
+        const a = command.action;
+        const contracts = await client.query(
+          "SELECT monthly_gross_minor,currency FROM hr_contracts WHERE tenant_id=$1 AND company_id=$2 AND employee_id=$3 AND start_date<=$4::date AND (end_date IS NULL OR end_date>=$4::date) ORDER BY start_date DESC,created_at DESC LIMIT 1",
+          [tenant.tenantId, a.companyId, a.employeeId, a.period + "-01"],
+        );
+        const employee = (rows[0].state as BusinessState).employees?.find(
+          (e) => e.id === a.employeeId && e.companyId === a.companyId,
+        );
+        const company = (rows[0].state as BusinessState).companies.find(
+          (c) => c.id === a.companyId,
+        );
+        if (employee && contracts.rows.length) {
+          if (contracts.rows[0].currency !== company?.currency)
+            throw new BadRequestException(
+              "Devise du contrat différente de celle de la société",
+            );
+          employee.grossSalary = Number(contracts.rows[0].monthly_gross_minor);
+        }
+      }
       const state = applyBusiness(
         rows[0].state as BusinessState,
         command.action,
@@ -154,6 +176,46 @@ export class BusinessService {
           (g) => g.companyId === action.companyId && g.userId === action.userId,
         );
         if (grant) grant.membershipId = targetMembershipId;
+      }
+      if (command.action.type === "hr.employee.create") {
+        const e = state.employees![state.employees!.length - 1];
+        await client.query(
+          "INSERT INTO hr_employees(id,tenant_id,company_id,display_name,start_date) VALUES($1,$2,$3,$4,$5)",
+          [e.id, tenant.tenantId, e.companyId, e.fullName, e.hiredAt],
+        );
+        await client.query(
+          "INSERT INTO hr_contracts(id,tenant_id,company_id,employee_id,start_date,monthly_gross_minor,currency) VALUES($1,$2,$3,$4,$5,$6,$7)",
+          [
+            randomUUID(),
+            tenant.tenantId,
+            e.companyId,
+            e.id,
+            e.hiredAt,
+            e.grossSalary,
+            state.companies.find((c) => c.id === e.companyId)!.currency,
+          ],
+        );
+      }
+      if (
+        command.action.type === "hr.employee.status" ||
+        command.action.type === "hr.employee.update"
+      ) {
+        const a = command.action,
+          e = state.employees!.find(
+            (e) => e.id === a.employeeId && e.companyId === a.companyId,
+          )!;
+        await client.query(
+          "UPDATE hr_employees SET display_name=$4,end_date=$5 WHERE tenant_id=$1 AND company_id=$2 AND id=$3",
+          [
+            tenant.tenantId,
+            e.companyId,
+            e.id,
+            e.fullName,
+            e.status === "INACTIVE"
+              ? new Date().toISOString().slice(0, 10)
+              : null,
+          ],
+        );
       }
       const encoded = JSON.stringify(state);
       if (Buffer.byteLength(encoded) > 8 * 1024 * 1024)
