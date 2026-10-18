@@ -823,8 +823,8 @@ export default function BusinessPage() {
             key={company.id}
             state={s}
             company={company}
-            manage={manage}
-            finance={finance}
+            manage={manage && snapshot.hrAccess !== false}
+            finance={finance && snapshot.hrAccess !== false}
             busy={busy}
             run={run}
           />

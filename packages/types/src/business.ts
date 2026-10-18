@@ -196,6 +196,7 @@ export interface BusinessState {
   }[];
 }
 export interface BusinessSnapshot {
+  hrAccess?: boolean;
   version: number;
   state: BusinessState;
   holdingOwner: boolean;

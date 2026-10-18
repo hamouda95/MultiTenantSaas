@@ -113,6 +113,7 @@ export function visibleBusiness(
   userId: string,
   owner: boolean,
   membershipId?: string,
+  hrAccess = true,
 ): BusinessState {
   if (owner) return s;
   const ids = new Set(
@@ -130,6 +131,7 @@ export function visibleBusiness(
       .filter(
         (g) =>
           g.userId === userId &&
+          hrAccess &&
           ["MANAGER", "FINANCE"].includes(g.role) &&
           (!membershipId || g.membershipId === membershipId),
       )

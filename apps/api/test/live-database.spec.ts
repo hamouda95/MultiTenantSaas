@@ -915,6 +915,40 @@ describe.skipIf(!live)("Real PostgreSQL API and RLS integration", () => {
     expect(
       (await request(route + "/employees", { cookie: otherCookie })).status,
     ).toBe(403);
+    const viewerId = (await request("/auth/me", { cookie: viewerCookie })).body
+      .profile.id;
+    await cmd({
+      type: "access.grant",
+      companyId,
+      userId: viewerId,
+      role: "MANAGER",
+    });
+    const noHr = (
+      await request(`/tenants/${tenantId}/business`, { cookie: viewerCookie })
+    ).body;
+    expect(noHr.hrAccess).toBe(false);
+    expect(noHr.state.employees).toHaveLength(0);
+    expect(
+      (await request(route + "/contracts", { cookie: viewerCookie })).body,
+    ).toHaveLength(0);
+    expect(
+      (
+        await request(`/tenants/${tenantId}/business/commands`, {
+          method: "POST",
+          cookie: viewerCookie,
+          body: {
+            commandId: randomUUID(),
+            version: noHr.version,
+            action: {
+              type: "hr.payroll.record",
+              companyId,
+              employeeId,
+              period: "2026-10",
+            },
+          },
+        })
+      ).status,
+    ).toBe(403);
     const contract = await request(route + "/contracts", {
       method: "POST",
       cookie: ownerCookie,

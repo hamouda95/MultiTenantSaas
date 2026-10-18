@@ -181,4 +181,14 @@ describe("HR and annual management P&L", () => {
     });
     expect(annualPnl(s, companyId, 2026).total.beforeTax).toBe(-41000);
   });
+  it("requires explicit HR access to include individual salaries even for company managers", () => {
+    const { s, companyId } = fixture();
+    s.access.push({ companyId, userId: operator, role: "MANAGER" });
+    expect(
+      visibleBusiness(s, operator, false, undefined, false).employees,
+    ).toHaveLength(0);
+    expect(
+      visibleBusiness(s, operator, false, undefined, true).employees,
+    ).toHaveLength(1);
+  });
 });

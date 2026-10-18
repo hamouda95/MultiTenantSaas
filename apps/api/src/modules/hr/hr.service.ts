@@ -103,7 +103,8 @@ export class HrService {
     );
     const role =
       owner ||
-      (grant?.role === "MANAGER" && tenant.permissions.includes("hr:manage"))
+      (["MANAGER", "FINANCE"].includes(grant?.role || "") &&
+        tenant.permissions.includes("hr:manage"))
         ? "HR_MANAGER"
         : grant?.role === "OPERATIONS" || grant?.role === "MANAGER"
           ? "COMPANY_MANAGER"

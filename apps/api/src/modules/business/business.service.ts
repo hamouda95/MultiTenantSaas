@@ -28,10 +28,14 @@ export class BusinessService {
     return {
       userId: user.userId,
       owner: user.isPlatformAdmin || tenant.roles.includes("Owner"),
+      hrAccess:
+        user.isPlatformAdmin ||
+        tenant.roles.includes("Owner") ||
+        tenant.permissions.includes("hr:manage"),
     };
   }
   async snapshot(tenant: TenantContext) {
-    const { userId, owner } = this.identity(tenant);
+    const { userId, owner, hrAccess } = this.identity(tenant);
     const result = await this.db.queryInTenantContext(
       tenant.tenantId,
       "SELECT version, state FROM business_ledgers WHERE tenant_id=$1",
@@ -44,13 +48,15 @@ export class BusinessService {
         userId,
         owner,
         tenant.membershipId,
+        hrAccess,
       ),
       holdingOwner: owner,
+      hrAccess,
       userId,
     };
   }
   async pos(tenant: TenantContext) {
-    const { userId, owner } = this.identity(tenant);
+    const { userId, owner, hrAccess } = this.identity(tenant);
     const r = await this.db.queryInTenantContext(
       tenant.tenantId,
       "SELECT version,state FROM business_ledgers WHERE tenant_id=$1",
@@ -69,7 +75,9 @@ export class BusinessService {
     command: BusinessCommand,
     forPos = false,
   ) {
-    const { userId, owner } = this.identity(tenant);
+    const { userId, owner, hrAccess } = this.identity(tenant);
+    if (command.action.type.startsWith("hr.") && !hrAccess)
+      throw new ForbiddenException("Permission hr:manage requise");
     return this.db.runInTenantContext(tenant.tenantId, async (client) => {
       await client.query(
         "SELECT pg_advisory_xact_lock_shared(hashtextextended($1,0))",
@@ -119,8 +127,10 @@ export class BusinessService {
             userId,
             owner,
             tenant.membershipId,
+            hrAccess,
           ),
           holdingOwner: owner,
+          hrAccess,
           userId,
         };
       }
@@ -257,8 +267,15 @@ export class BusinessService {
         );
       return {
         version: Number(rows[0].version) + 1,
-        state: visibleBusiness(state, userId, owner, tenant.membershipId),
+        state: visibleBusiness(
+          state,
+          userId,
+          owner,
+          tenant.membershipId,
+          hrAccess,
+        ),
         holdingOwner: owner,
+        hrAccess,
         userId,
       };
     });
