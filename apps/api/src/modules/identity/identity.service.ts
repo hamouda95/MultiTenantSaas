@@ -6,13 +6,13 @@ const scrypt = promisify(scryptCallback);
 import { RlsPostgresService } from '../../database/rls-postgres.service';
 import { User, AuthenticatedUserContext } from '@saas/types';
 
-@Injectable()
 function requiredJwtSecret(): string {
   const secret = process.env.JWT_SECRET;
   if (!secret || secret.length < 32) throw new Error('JWT_SECRET must contain at least 32 characters');
   return secret;
 }
 
+@Injectable()
 export class IdentityService {
   constructor(
     @Inject(RlsPostgresService) private readonly rlsDb: RlsPostgresService,
