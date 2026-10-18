@@ -500,7 +500,7 @@ let failurePage;
   await page
     .getByRole("button", { name: "Ajouter un salarié", exact: true })
     .click();
-  await page.getByText("Salarié Browser", { exact: true }).waitFor();
+  await page.getByRole("cell", { name: /Salarié Browser/ }).waitFor();
   await page
     .getByRole("button", { name: "Comptabiliser", exact: true })
     .click();
@@ -544,6 +544,13 @@ let failurePage;
     exact: true,
   });
   await samplePhoto.waitFor();
+  await samplePhoto.scrollIntoViewIfNeeded();
+  await page.waitForFunction(() => {
+    const img = document.querySelector(
+      'img[alt="Échantillon fournisseur DEMO2027"]',
+    );
+    return img && img.complete && img.naturalWidth > 0;
+  });
   assert(
     await samplePhoto.evaluate((img) => img.complete && img.naturalWidth > 0),
   );
@@ -591,11 +598,9 @@ let failurePage;
     .getByRole("heading", { name: "Contrats & congés", exact: true })
     .waitFor();
   await page.getByText(/Salarié Browser — depuis/).waitFor();
-  const leaveForm = page
-    .locator("form")
-    .filter({
-      has: page.getByRole("button", { name: "Demander un congé", exact: true }),
-    });
+  const leaveForm = page.locator("form").filter({
+    has: page.getByRole("button", { name: "Demander un congé", exact: true }),
+  });
   await leaveForm.getByLabel("Du", { exact: true }).fill("2026-11-01");
   await leaveForm.getByLabel("Au", { exact: true }).fill("2026-11-03");
   await leaveForm
