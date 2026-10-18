@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, UseGuards, UsePipes } from '@nestjs/common';
+import { Controller, Post, Get, Body, UseGuards, UsePipes, UnauthorizedException } from '@nestjs/common';
 import { IdentityService } from './identity.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -14,12 +14,8 @@ export class IdentityController {
   @UsePipes(new ZodValidationPipe(LoginDtoSchema))
   async login(@Body() body: LoginDto) {
     let user = await this.identityService.findByEmail(body.email);
-    if (!user) {
-      // In development / test environment, auto-provision user if does not exist
-      user = await this.identityService.createUser({
-        email: body.email,
-        fullName: body.email.split('@')[0],
-      });
+    if (!user || !(await this.identityService.verifyPassword(user.id, body.password))) {
+      throw new UnauthorizedException('Invalid credentials');
     }
 
     const token = await this.identityService.generateToken(user);
