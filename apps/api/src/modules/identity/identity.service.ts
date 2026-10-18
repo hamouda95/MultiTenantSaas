@@ -1,6 +1,6 @@
 import { Injectable, UnauthorizedException, Inject } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
+import { randomUUID, scrypt as scryptCallback, timingSafeEqual, randomBytes } from 'node:crypto';
 import { promisify } from 'node:util';
 const scrypt = promisify(scryptCallback);
 import { RlsPostgresService } from '../../database/rls-postgres.service';
@@ -44,6 +44,7 @@ export class IdentityService {
     if (!record || record.status !== 'ACTIVE' || !record.password_hash) return false;
     const [algorithm, salt, encoded] = record.password_hash.split(':');
     if (algorithm !== 'scrypt' || !salt || !encoded) return false;
+    if (!/^[a-f0-9]{128}$/i.test(encoded)) return false;
     const expected = Buffer.from(encoded, 'hex');
     if (expected.length !== 64) return false;
     const actual = (await scrypt(password, salt, 64)) as Buffer;
@@ -89,13 +90,18 @@ export class IdentityService {
     email: string;
     fullName: string;
     isPlatformAdmin?: boolean;
+    password?: string;
   }): Promise<User> {
     const userId = data.id || randomUUID();
+    if (!data.password || data.password.length < 12) throw new Error('A password of at least 12 characters is required');
+    const salt = randomBytes(16).toString('hex');
+    const hash = (await scrypt(data.password, salt, 64)) as Buffer;
+    const passwordHash = `scrypt:${salt}:${hash.toString('hex')}`;
     const result = await this.rlsDb.queryAdmin<User>(
-      `INSERT INTO users (id, email, full_name, is_platform_admin, status)
-       VALUES ($1, $2, $3, $4, 'ACTIVE')
+      `INSERT INTO users (id, email, full_name, is_platform_admin, password_hash, status)
+       VALUES ($1, $2, $3, $4, $5, 'ACTIVE')
        RETURNING id, email, full_name as "fullName", is_platform_admin as "isPlatformAdmin", status, created_at as "createdAt", updated_at as "updatedAt"`,
-      [userId, data.email.toLowerCase(), data.fullName, Boolean(data.isPlatformAdmin)],
+      [userId, data.email.toLowerCase(), data.fullName, Boolean(data.isPlatformAdmin), passwordHash],
     );
     return result.rows[0];
   }
