@@ -38,9 +38,16 @@ const company = z
     minimumStock: z.number().int().min(0).max(100000),
     modules: z
       .array(
-        z.enum(["purchasing", "inventory", "sales", "finance", "intelligence"]),
+        z.enum([
+          "purchasing",
+          "inventory",
+          "sales",
+          "finance",
+          "intelligence",
+          "hr",
+        ]),
       )
-      .max(5),
+      .max(6),
   })
   .strict();
 export const BusinessCommandSchema = z
@@ -49,6 +56,82 @@ export const BusinessCommandSchema = z
     version: z.number().int().min(0),
     action: z.discriminatedUnion("type", [
       z.object({ type: z.literal("company.create"), data: company }).strict(),
+      z
+        .object({
+          type: z.literal("hr.employee.create"),
+          companyId: id,
+          fullName: text,
+          jobTitle: text,
+          department: text,
+          locationId: id.optional(),
+          grossSalary: positive,
+          employerChargesBps: z.number().int().min(0).max(10000),
+          hiredAt: date,
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("hr.employee.update"),
+          companyId: id,
+          employeeId: id,
+          fullName: text,
+          jobTitle: text,
+          department: text,
+          locationId: id.optional(),
+          grossSalary: positive,
+          employerChargesBps: z.number().int().min(0).max(10000),
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("hr.employee.status"),
+          companyId: id,
+          employeeId: id,
+          status: z.enum(["ACTIVE", "INACTIVE"]),
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("hr.payroll.record"),
+          companyId: id,
+          employeeId: id,
+          period: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("hr.payroll.pay"),
+          companyId: id,
+          payrollId: id,
+          accountId: id,
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("sample.create"),
+          companyId: id,
+          supplierId: id,
+          model: text,
+          reference: text,
+          photoUrl: z.union([
+            z.string().regex(/^\/demo\/[a-zA-Z0-9_./-]+$/),
+            z
+              .string()
+              .url()
+              .refine((u) => u.startsWith("https://")),
+          ]),
+          unitCost: positive,
+          minimumQuantity: z.number().int().min(1).max(100000),
+          leadDays: z.number().int().min(1).max(365),
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("sample.approve"),
+          companyId: id,
+          sampleId: id,
+        })
+        .strict(),
       z
         .object({
           type: z.literal("company.lifecycle"),

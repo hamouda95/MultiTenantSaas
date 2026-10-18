@@ -486,6 +486,106 @@ let failurePage;
       .reduce((n, m) => n + m.quantity, 0),
     94,
   );
+  // New modules: real employee accrual/payment and supplier sample → purchase draft.
+  await page.goto(`/t/${tenantId}/business`);
+  await page.getByLabel("Société", { exact: true }).selectOption(companyId);
+  await page
+    .getByRole("button", { name: "Ressources humaines", exact: true })
+    .click();
+  await page.getByLabel("Nom complet", { exact: true }).fill("Salarié Browser");
+  await page.getByLabel("Poste", { exact: true }).fill("Vendeur");
+  await page.getByLabel("Département", { exact: true }).fill("Ventes");
+  await page.getByLabel("Salaire brut (TND)", { exact: true }).fill("1000");
+  await page.getByLabel("Date d’entrée", { exact: true }).fill("2025-01-01");
+  await page
+    .getByRole("button", { name: "Ajouter un salarié", exact: true })
+    .click();
+  await page.getByText("Salarié Browser", { exact: true }).waitFor();
+  await page
+    .getByRole("button", { name: "Comptabiliser", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Régler", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Régler", exact: true }).click();
+  await page.getByText(/1[\s\u00a0\u202f]?180.*Réglé/).waitFor();
+  await page.screenshot({
+    path: "test-results/hr-desktop.png",
+    fullPage: true,
+  });
+  response = await context.request.get(`/api/v1/tenants/${tenantId}/business`);
+  snap = await response.json();
+  assert.equal(snap.state.payroll[0].total, 1180000);
+  assert(snap.state.payroll[0].paidAt);
+  await cmd({
+    type: "product.create",
+    sku: "SAMPLE-NEW",
+    name: "Nouveau modèle",
+    model: "DEMO2027",
+    brand: "Polaris",
+    size: "42",
+    color: "Noir",
+  });
+  await cmd({
+    type: "sample.create",
+    supplierId: snap.state.partners.find((p) => p.kind === "SUPPLIER").id,
+    model: "DEMO2027",
+    reference: "SAMPLE-BROWSER",
+    photoUrl: "/demo/supplier-samples.png",
+    unitCost: 50000,
+    minimumQuantity: 100,
+    leadDays: 30,
+  });
+  await page.reload();
+  await page.getByLabel("Société", { exact: true }).selectOption(companyId);
+  await page
+    .getByRole("button", { name: "Échantillons & commandes", exact: true })
+    .click();
+  const samplePhoto = page.getByRole("img", {
+    name: "Échantillon fournisseur DEMO2027",
+    exact: true,
+  });
+  await samplePhoto.waitFor();
+  assert(
+    await samplePhoto.evaluate((img) => img.complete && img.naturalWidth > 0),
+  );
+  await page
+    .getByRole("button", { name: "Approuver l’échantillon", exact: true })
+    .click();
+  await page.getByText("Échantillon approuvé", { exact: false }).waitFor();
+  await page
+    .getByRole("button", {
+      name: "Préparer un brouillon de commande",
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("status")
+    .filter({ hasText: "Opération enregistrée." })
+    .waitFor();
+  response = await context.request.get(`/api/v1/tenants/${tenantId}/business`);
+  snap = await response.json();
+  assert(
+    snap.state.orders.some(
+      (o) =>
+        o.reference.startsWith("ECH-SAMPLE-BROWSER-") &&
+        o.status === "DRAFT" &&
+        o.lines[0].quantity === 100,
+    ),
+  );
+  await page.screenshot({
+    path: "test-results/supplier-samples-desktop.png",
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "P&L annuel", exact: true }).click();
+  await page
+    .getByRole("heading", { name: "P&L annuel du holding", exact: true })
+    .waitFor();
+  const pnlDownload = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Exporter CSV", exact: true }).click();
+  assert((await pnlDownload).suggestedFilename().startsWith("pnl-"));
+  await page.screenshot({
+    path: "test-results/pnl-desktop.png",
+    fullPage: true,
+  });
   await page.goto("/administration");
   await page
     .getByRole("heading", { name: "Administration des holdings", exact: true })

@@ -1,4 +1,8 @@
-import { financingCashFlow, financingOutstanding } from "@saas/types";
+import {
+  financingCashFlow,
+  financingOutstanding,
+  payrollCashFlow,
+} from "@saas/types";
 import { applyPos } from "./pos.engine";
 import { randomUUID } from "node:crypto";
 import {
@@ -61,7 +65,8 @@ export function balance(s: BusinessState, accountId: string) {
   if (!account) throw new NotFoundException("Compte introuvable");
   return safe(
     account.opening +
-      financingCashFlow(s, accountId) +
+      financingCashFlow(s, accountId) -
+      payrollCashFlow(s, accountId) +
       (s.cashAdjustments || [])
         .filter((x) => x.accountId === accountId)
         .reduce((n, x) => n + x.amount, 0) +
@@ -120,17 +125,57 @@ export function visibleBusiness(
       )
       .map((g) => g.companyId),
   );
-  return Object.fromEntries(
+  const hrIds = new Set(
+    s.access
+      .filter(
+        (g) =>
+          g.userId === userId &&
+          ["MANAGER", "FINANCE"].includes(g.role) &&
+          (!membershipId || g.membershipId === membershipId),
+      )
+      .map((g) => g.companyId),
+  );
+  const result = Object.fromEntries(
     Object.entries(s).map(([key, values]) => [
       key,
       key === "companies"
         ? (values as any[]).filter((x) => ids.has(x.id))
         : (values as any[]).filter(
             (x) =>
-              ids.has(x.companyId) && (key !== "access" || x.userId === userId),
+              ids.has(x.companyId) &&
+              (!["employees", "payroll"].includes(key) ||
+                hrIds.has(x.companyId)) &&
+              (key !== "access" || x.userId === userId),
           ),
     ]),
   ) as unknown as BusinessState;
+  const sums = new Map<
+    string,
+    {
+      companyId: string;
+      period: string;
+      total: number;
+      paid: number;
+      accountId: string;
+    }
+  >();
+  for (const p of s.payroll || []) {
+    if (!ids.has(p.companyId)) continue;
+    const accountId = p.accountId || "",
+      key = p.companyId + ":" + p.period + ":" + accountId;
+    const r = sums.get(key) || {
+      companyId: p.companyId,
+      period: p.period,
+      total: 0,
+      paid: 0,
+      accountId,
+    };
+    r.total += p.total;
+    if (p.paidAt) r.paid += p.total;
+    sums.set(key, r);
+  }
+  result.payrollSummary = [...sums.values()];
+  return result;
 }
 /** Executes only on a transaction-local copy; persisted atomically with audit. */
 export function applyBusiness(
@@ -218,7 +263,9 @@ export function applyBusiness(
       .map((p) => p.cashAccountId),
   );
   if (
-    ((a.type === "payment.create" || a.type === "expense.create") &&
+    ((a.type === "payment.create" ||
+      a.type === "expense.create" ||
+      a.type === "hr.payroll.pay") &&
       openCash.has(a.accountId)) ||
     (a.type === "cash.transfer" &&
       (openCash.has(a.fromId) || openCash.has(a.toId)))
@@ -238,6 +285,8 @@ export function applyBusiness(
     "financing.create",
     "financing.draw",
     "financing.repay",
+    "hr.payroll.record",
+    "hr.payroll.pay",
   ];
   if (
     role === "FINANCE" &&
@@ -260,15 +309,23 @@ export function applyBusiness(
         ["APPROVED", "CANCELLED"].includes(a.status)))
   )
     throw new ForbiddenException("Approbation du responsable requise");
-  const module = a.type.startsWith("order.")
-    ? "purchasing"
-    : a.type.startsWith("stock.")
-      ? "inventory"
-      : a.type.startsWith("sale.")
-        ? "sales"
-        : finance.includes(a.type)
-          ? "finance"
-          : null;
+  if (
+    (a.type.startsWith("hr.employee.") || a.type === "sample.approve") &&
+    role !== "MANAGER"
+  )
+    throw new ForbiddenException("Responsable requis");
+  if (a.type.startsWith("hr.") && !company.modules.includes("hr"))
+    fail("Module RH désactivé");
+  const module =
+    a.type.startsWith("order.") || a.type.startsWith("sample.")
+      ? "purchasing"
+      : a.type.startsWith("stock.")
+        ? "inventory"
+        : a.type.startsWith("sale.")
+          ? "sales"
+          : finance.includes(a.type)
+            ? "finance"
+            : null;
   if (module && !company.modules.includes(module))
     fail(`Module ${module} désactivé pour cette société`);
   const own = <T extends { id: string; companyId: string }>(
@@ -436,6 +493,94 @@ export function applyBusiness(
         address: a.address || "",
       });
       break;
+    case "hr.employee.create": {
+      if (a.locationId) own(s.locations, a.locationId);
+      if (a.hiredAt > date) fail("Date d’entrée future");
+      s.employees ??= [];
+      s.employees.push({ ...a, id, status: "ACTIVE" });
+      break;
+    }
+    case "hr.employee.update": {
+      const e = own(s.employees || [], a.employeeId);
+      if (a.locationId) own(s.locations, a.locationId);
+      Object.assign(e, {
+        fullName: a.fullName,
+        jobTitle: a.jobTitle,
+        department: a.department,
+        locationId: a.locationId,
+        grossSalary: a.grossSalary,
+        employerChargesBps: a.employerChargesBps,
+      });
+      break;
+    }
+    case "hr.employee.status": {
+      own(s.employees || [], a.employeeId).status = a.status;
+      break;
+    }
+    case "hr.payroll.record": {
+      const e = own(s.employees || [], a.employeeId);
+      if (
+        e.status !== "ACTIVE" ||
+        a.period < e.hiredAt.slice(0, 7) ||
+        a.period > date.slice(0, 7)
+      )
+        fail("Période de paie ou salarié invalide");
+      s.payroll ??= [];
+      if (
+        s.payroll.some(
+          (p) =>
+            p.companyId === companyId &&
+            p.employeeId === e.id &&
+            p.period === a.period,
+        )
+      )
+        fail("Paie déjà comptabilisée pour ce mois");
+      const charges = safe(
+        Math.round((e.grossSalary * e.employerChargesBps) / 10000),
+      );
+      s.payroll.push({
+        id,
+        companyId,
+        employeeId: e.id,
+        period: a.period,
+        gross: e.grossSalary,
+        employerCharges: charges,
+        total: safe(e.grossSalary + charges),
+        createdAt: now,
+      });
+      break;
+    }
+    case "hr.payroll.pay": {
+      const p = own(s.payroll || [], a.payrollId);
+      if (p.paidAt) fail("Paie déjà réglée");
+      requireCash(a.accountId, p.total);
+      p.paidAt = now;
+      p.accountId = a.accountId;
+      break;
+    }
+    case "sample.create": {
+      if (own(s.partners, a.supplierId).kind !== "SUPPLIER")
+        fail("Fournisseur requis");
+      if (
+        !s.products.some(
+          (p) => p.companyId === companyId && (p.model || p.name) === a.model,
+        )
+      )
+        fail("Modèle introuvable");
+      s.samples ??= [];
+      if (
+        s.samples.some(
+          (x) => x.companyId === companyId && x.reference === a.reference,
+        )
+      )
+        fail("Référence d’échantillon existante");
+      s.samples.push({ ...a, id, status: "PROPOSED", createdAt: now });
+      break;
+    }
+    case "sample.approve": {
+      own(s.samples || [], a.sampleId).status = "APPROVED";
+      break;
+    }
     case "partner.update": {
       const p = own(s.partners, a.partnerId);
       Object.assign(p, {

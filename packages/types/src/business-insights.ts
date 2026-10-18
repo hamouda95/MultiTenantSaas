@@ -25,7 +25,8 @@ export function productStock(
 export function accountBalance(s: BusinessState, id: string) {
   return (
     (s.accounts.find((a) => a.id === id)?.opening || 0) +
-    financingCashFlow(s, id) +
+    financingCashFlow(s, id) -
+    payrollCashFlow(s, id) +
     (s.cashAdjustments || [])
       .filter((x) => x.accountId === id)
       .reduce((n, x) => n + x.amount, 0) +
@@ -93,6 +94,7 @@ export function companyMetrics(
       revenue -
       cogs -
       expenses -
+      payrollCosts(s, c.id) -
       (s.financingPayments || [])
         .filter((p) => p.companyId === c.id)
         .reduce((n, p) => n + p.interest, 0),
@@ -105,6 +107,13 @@ export function companyMetrics(
       cash +
       due("RECEIVABLE", 30) -
       due("PAYABLE", 30) -
+      (s.payrollSummary
+        ? s.payrollSummary
+            .filter((p) => p.companyId === c.id)
+            .reduce((n, p) => n + p.total - p.paid, 0)
+        : (s.payroll || [])
+            .filter((p) => p.companyId === c.id && !p.paidAt)
+            .reduce((n, p) => n + p.total, 0)) -
       (s.financings || [])
         .filter(
           (f) =>
@@ -281,4 +290,172 @@ export function modelInventory(
     colors.set(color, row);
   }
   return [...colors.values()].sort((a, b) => a.color.localeCompare(b.color));
+}
+
+export function payrollCashFlow(s: BusinessState, accountId: string) {
+  return s.payrollSummary
+    ? s.payrollSummary
+        .filter((p) => p.accountId === accountId)
+        .reduce((n, p) => n + p.paid, 0)
+    : (s.payroll || [])
+        .filter((p) => p.accountId === accountId && p.paidAt)
+        .reduce((n, p) => n + p.total, 0);
+}
+export function payrollCosts(
+  s: BusinessState,
+  companyId: string,
+  period?: string,
+) {
+  return s.payrollSummary
+    ? s.payrollSummary
+        .filter(
+          (p) =>
+            p.companyId === companyId &&
+            (!period || p.period.startsWith(period)),
+        )
+        .reduce((n, p) => n + p.total, 0)
+    : (s.payroll || [])
+        .filter(
+          (p) =>
+            p.companyId === companyId &&
+            (!period || p.period.startsWith(period)),
+        )
+        .reduce((n, p) => n + p.total, 0);
+}
+/** Management P&L: cost of shipped sales, returns in their actual month, payroll accrued by period,
+ * other costs and interest as entered. No depreciation, tax or intercompany eliminations. */
+export function annualPnl(s: BusinessState, companyId: string, year: number) {
+  const months = Array.from({ length: 12 }, (_, i) => ({
+    period: `${year}-${String(i + 1).padStart(2, "0")}`,
+    revenue: 0,
+    cogs: 0,
+    expenses: 0,
+    payroll: 0,
+    interest: 0,
+    grossMargin: 0,
+    operating: 0,
+    beforeTax: 0,
+  }));
+  const row = (date: string) =>
+    months.find((m) => m.period === date.slice(0, 7));
+  for (const sale of s.sales.filter((x) => x.companyId === companyId)) {
+    const m = row(sale.date);
+    if (m) {
+      m.revenue += sale.total;
+      m.cogs += sale.cost;
+    }
+    if (sale.returned) {
+      const returnedAt =
+        s.movements.find((x) => x.sourceId === sale.id && x.reason === "RETURN")
+          ?.date || sale.date;
+      const r = row(returnedAt);
+      if (r) {
+        r.revenue -= sale.total;
+        r.cogs -= sale.cost;
+      }
+    }
+  }
+  for (const e of s.expenses.filter((x) => x.companyId === companyId)) {
+    const m = row(e.date);
+    if (m) m.expenses += e.amount;
+  }
+  for (const p of (s.financingPayments || []).filter(
+    (x) => x.companyId === companyId,
+  )) {
+    const m = row(p.date);
+    if (m) m.interest += p.interest;
+  }
+  for (const m of months) {
+    m.payroll = payrollCosts(s, companyId, m.period);
+    m.grossMargin = m.revenue - m.cogs;
+    m.operating = m.grossMargin - m.expenses - m.payroll;
+    m.beforeTax = m.operating - m.interest;
+  }
+  const total = months.reduce(
+    (a, m) => {
+      for (const k of [
+        "revenue",
+        "cogs",
+        "expenses",
+        "payroll",
+        "interest",
+        "grossMargin",
+        "operating",
+        "beforeTax",
+      ] as const)
+        a[k] += m[k];
+      return a;
+    },
+    {
+      revenue: 0,
+      cogs: 0,
+      expenses: 0,
+      payroll: 0,
+      interest: 0,
+      grossMargin: 0,
+      operating: 0,
+      beforeTax: 0,
+    },
+  );
+  return { months, total };
+}
+export function purchaseNeeds(
+  s: BusinessState,
+  c: BusinessCompany,
+  sample: { model: string; leadDays: number; minimumQuantity: number },
+  now = new Date(),
+) {
+  const start = new Date(now.getTime() - 30 * 86400000).toISOString();
+  const variants = s.products.filter(
+    (p) => p.companyId === c.id && (p.model || p.name) === sample.model,
+  );
+  const rows = variants.map((p) => {
+    const sold = s.sales
+      .filter(
+        (x) =>
+          x.companyId === c.id &&
+          x.date >= start &&
+          x.date <= now.toISOString() &&
+          !x.returned,
+      )
+      .reduce(
+        (n, x) =>
+          n +
+          x.lines
+            .filter((l) => l.productId === p.id)
+            .reduce((t, l) => t + l.quantity, 0),
+        0,
+      );
+    const incoming = s.orders
+      .filter(
+        (o) =>
+          o.companyId === c.id && !["RECEIVED", "CANCELLED"].includes(o.status),
+      )
+      .reduce(
+        (n, o) =>
+          n +
+          o.lines
+            .filter((l) => l.productId === p.id)
+            .reduce((t, l) => t + l.quantity, 0),
+        0,
+      );
+    const target =
+      Math.ceil((sold / 30) * (sample.leadDays + c.coverDays)) + c.minimumStock;
+    return {
+      productId: p.id,
+      sold,
+      stock: productStock(s, p.id),
+      incoming,
+      quantity: Math.max(0, target - productStock(s, p.id) - incoming),
+    };
+  });
+  const needed = rows.reduce((n, r) => n + r.quantity, 0);
+  if (needed > 0 && needed < sample.minimumQuantity && rows.length) {
+    let extra = sample.minimumQuantity - needed;
+    for (let i = 0; extra > 0; i = (i + 1) % rows.length) {
+      rows[i].quantity++;
+      extra--;
+    }
+  }
+  return rows;
 }

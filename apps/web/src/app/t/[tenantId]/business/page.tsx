@@ -30,6 +30,9 @@ import {
   replenishment,
 } from "@saas/types";
 import type { BusinessState, BusinessCompany, BusinessLine } from "@saas/types";
+import { AnnualPnl } from "@/components/business/annual-pnl";
+import { HrPanel } from "@/components/business/hr-panel";
+import { SupplierSamples } from "@/components/business/supplier-samples";
 import { InventoryAnalysis } from "@/components/business/inventory-analysis";
 import { PartnerDirectory } from "@/components/business/partner-directory";
 import {
@@ -45,13 +48,21 @@ import { Input } from "@/components/ui/input";
 import { ErrorState } from "@/components/ui/states";
 
 const today = () => new Date().toISOString().slice(0, 10);
-const modules = ["purchasing", "inventory", "sales", "finance", "intelligence"];
+const modules = [
+  "purchasing",
+  "inventory",
+  "sales",
+  "finance",
+  "intelligence",
+  "hr",
+];
 const moduleLabels: Record<string, string> = {
   purchasing: "Achats & import",
   inventory: "Stocks & distribution",
   sales: "Ventes",
   finance: "Trésorerie",
   intelligence: "Recommandations",
+  hr: "Ressources humaines",
 };
 const statusLabels: Record<string, string> = {
   DRAFT: "Brouillon",
@@ -66,11 +77,14 @@ const tabs = [
   ["overview", "Vue holding"],
   ["companies", "Sociétés & configuration"],
   ["catalog", "Catalogue & réseau"],
+  ["samples", "Échantillons & commandes"],
   ["purchasing", "Achats & imports"],
   ["inventory", "Stocks & transferts"],
   ["sales", "Ventes"],
   ["finance", "Banques & trésorerie"],
   ["intelligence", "Intelligence"],
+  ["hr", "Ressources humaines"],
+  ["pnl", "P&L annuel"],
   ["access", "Accès sociétés"],
 ] as const;
 const selectClass =
@@ -699,6 +713,49 @@ export default function BusinessPage() {
             : `Accès aux sociétés attribuées uniquement${role ? ` · ${role}` : ""}`}
         </p>
       </div>
+      {!!s.demoNotes?.length && (
+        <div className="mb-5 rounded-xl border border-brand/30 bg-brand/5 p-4">
+          <h2 className="font-semibold">
+            DÉMONSTRATION — Groupe Horizon · Données fictives
+          </h2>
+          <p className="mt-1 text-sm text-muted">
+            3 sociétés, 10 magasins : sélectionnez Polaris pour suivre un modèle
+            de l’échantillon à la caisse. Les ventes historiques sont des
+            synthèses mensuelles fictives ; les tickets récents illustrent le
+            parcours caisse. Le P&L 2025 est calculé à partir des écritures.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {[
+              ["samples", "1 · Échantillons"],
+              ["purchasing", "2 · Importation"],
+              ["inventory", "3 · Distribution"],
+              ["sales", "4 · Ventes"],
+              ["hr", "5 · RH"],
+              ["pnl", "6 · P&L CEO"],
+            ].map(([id, label]) => (
+              <Button
+                key={id}
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  setTab(id);
+                  if (id !== "pnl" && !selected)
+                    setSelected(s.companies[0]?.id || "");
+                  if (id === "pnl") setSelected("");
+                }}
+              >
+                {label}
+              </Button>
+            ))}
+            <Link
+              className="rounded-lg border border-border p-2 text-sm"
+              href={`/t/${tenantId}/pos`}
+            >
+              Ouvrir la caisse
+            </Link>
+          </div>
+        </div>
+      )}
       <nav aria-label="Modules métier" className="mb-6 flex flex-wrap gap-2">
         {tabs.map(([id, label]) => (
           <Button
@@ -743,6 +800,39 @@ export default function BusinessPage() {
             </Button>
           )}
         </Panel>
+      )}
+      {tab === "pnl" && <AnnualPnl state={s} companyId={company?.id} />}
+      {company &&
+        tab === "samples" &&
+        (enabled("purchasing") ? (
+          <SupplierSamples
+            state={s}
+            company={company}
+            manage={manage}
+            operate={operate}
+            busy={busy}
+            run={run}
+          />
+        ) : (
+          <p>Module achats désactivé.</p>
+        ))}
+      {company &&
+        tab === "hr" &&
+        (enabled("hr") ? (
+          <HrPanel
+            key={company.id}
+            state={s}
+            company={company}
+            manage={manage}
+            finance={finance}
+            busy={busy}
+            run={run}
+          />
+        ) : (
+          <p>Activez le module RH dans Sociétés & configuration.</p>
+        ))}
+      {!company && ["samples", "hr"].includes(tab) && (
+        <p>Sélectionnez une société pour ouvrir ce module.</p>
       )}
       {tab === "overview" && (
         <>

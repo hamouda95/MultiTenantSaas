@@ -171,6 +171,17 @@ export interface BusinessState {
   cashTransfers: BusinessCashTransfer[];
   access: BusinessAccess[];
   events: BusinessEvent[];
+  employees?: BusinessEmployee[];
+  payroll?: BusinessPayroll[];
+  payrollSummary?: {
+    companyId: string;
+    period: string;
+    total: number;
+    paid: number;
+    accountId: string;
+  }[];
+  samples?: SupplierSample[];
+  demoNotes?: { companyId: string; year: number; title: string }[];
   financings?: BusinessFinancing[];
   financingPayments?: FinancingPayment[];
   posConfigs?: PosConfig[];
@@ -301,4 +312,42 @@ export interface FinancingPayment {
   principal: number;
   interest: number;
   date: string;
+}
+
+export interface BusinessEmployee {
+  id: string;
+  companyId: string;
+  fullName: string;
+  jobTitle: string;
+  department: string;
+  locationId?: string;
+  grossSalary: number;
+  employerChargesBps: number;
+  hiredAt: string;
+  status: "ACTIVE" | "INACTIVE";
+}
+export interface BusinessPayroll {
+  id: string;
+  companyId: string;
+  employeeId: string;
+  period: string;
+  gross: number;
+  employerCharges: number;
+  total: number;
+  createdAt: string;
+  paidAt?: string;
+  accountId?: string;
+}
+export interface SupplierSample {
+  id: string;
+  companyId: string;
+  supplierId: string;
+  model: string;
+  reference: string;
+  photoUrl: string;
+  unitCost: number;
+  minimumQuantity: number;
+  leadDays: number;
+  status: "PROPOSED" | "APPROVED";
+  createdAt: string;
 }

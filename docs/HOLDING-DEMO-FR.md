@@ -1,0 +1,32 @@
+# Groupe Horizon — démonstration fictive
+
+Cette holding est isolée des sociétés réelles. Trois sociétés, dix magasins et 29 salariés fictifs permettent de présenter le cycle complet. Tous les fournisseurs, visuels, employés et opérations sont des exemples. Les événements historiques ont été générés par le moteur métier, non importés d'une banque ou d'un logiciel comptable.
+
+## Parcours de présentation (15 minutes)
+
+1. Ouvrir le workspace **DÉMO — Groupe Horizon**, puis Gestion du holding. La vue générale montre les banques, caisses, créances, dettes et stocks. Sélectionner Polaris Footwear.
+2. **Échantillons & commandes** : montrer la photo illustrative du modèle T9800, ses cinq couleurs et deux pointures. Expliquer prix, quantité minimale et délai fournisseur. La proposition de commande utilise les ventes des 30 derniers jours, la couverture configurée, les stocks et commandes en cours. Elle est déterministe et expliquée ; ce n'est pas une prévision IA entraînée. Un clic crée uniquement un brouillon interne.
+3. **Achats & imports** : consulter une commande réceptionnée et une commande expédiée. Montrer les étapes approbation, commande, expédition, douane, réception, ainsi que le financement bancaire. Transport et douane sont incorporés dans le coût du stock ; leurs factures sont payées séparément sans double comptabiliser une charge.
+4. **Stocks & transferts** : choisir T9800 et comparer les couleurs, les magasins et l'entrepôt. Consulter les suggestions de distribution et confirmer un transfert. Un ajustement administratif exige un motif et reste audité.
+5. **Caisse** : choisir un magasin, ouvrir une session à zéro (les sessions de démonstration ont été clôturées), rechercher ou scanner un article, choisir un client et encaisser. Les références lisibles de démonstration sont par exemple DEMO1140. L'usage d'une douchette nécessite qu'elle envoie cette référence suivie d'Entrée. La caméra doit disposer d'une image de code-barres correspondante et de l'autorisation navigateur. Terminer par une clôture de caisse. Les ventes mensuelles historiques sont des synthèses fictives, les tickets récents sont de petits exemples détaillés.
+6. **Ressources humaines** : présenter les salariés par établissement, les paies mensuelles comptabilisées et réglées. Le mois d'octobre 2026 reste à comptabiliser pour permettre une manipulation en direct. Les rôles Direction et Finance voient les fiches ; les rôles opérationnels ne reçoivent que les coûts agrégés nécessaires aux indicateurs.
+7. **P&L annuel** : revenir à toutes les sociétés, sélectionner 2025, puis expliquer CA, coût vendu, marge, charges, coût employeur, intérêts et résultat. Exporter en CSV ou utiliser Imprimer / PDF.
+
+## Chiffres de l'exercice 2025 (TND)
+
+| Société           |    CA net | Marge brute | Coût employeur | Résultat avant impôts et amortissements |
+| ----------------- | --------: | ----------: | -------------: | --------------------------------------: |
+| Polaris Footwear  | 1 320 000 |     770 000 |        269 040 |                                 360 560 |
+| Atlas Sports      |   787 200 |     460 020 |        195 408 |                                 167 412 |
+| Nova Distribution |   537 200 |     314 420 |        158 592 |                                  80 228 |
+| Groupe            | 2 644 400 |   1 544 440 |        623 040 |                                 608 200 |
+
+Ce P&L est un rapport de gestion : il exclut TVA, amortissements, impôts et éliminations intragroupe. Les sociétés partagent la devise TND ; les devises différentes sont affichées séparément, sans conversion implicite. Les ventes et retours sont reconnus à leur date ; la paie est affectée à son mois ; les autres charges et intérêts suivent les écritures saisies. Le capital emprunté et remboursé n'est pas une recette ou une charge. Le stock n'est passé en coût vendu qu'à la vente.
+
+Le module RH suit les fiches et le coût employeur global. Le taux de charges de 18 % est une hypothèse fictive, pas un taux légal. Les règlements ne ventilent pas net salarié, retenues et organismes sociaux. Les bulletins légaux, congés, pointage et déclarations sociales ne sont pas implémentés dans ce parcours.
+
+## Reproduction et installation
+
+Après compilation : `node scripts/build-holding-demo.cjs /tmp/holding-demo.json USER_UUID`. Ce script est hors ligne, utilise les commandes validées et le moteur métier réel, contrôle stocks, soldes, clôtures et taille du registre. Les identifiants sont nouveaux à chaque génération. Il n'accède à aucune base et ne supprime rien. L'installation doit créer un nouveau workspace explicitement fictif, un propriétaire et les paramètres standards dans une transaction. Ne jamais remplacer le registre d'un client existant.
+
+Le visuel `apps/web/public/demo/supplier-samples.png` est généré, sans marque réelle. Prompt : photographie catalogue de cinq sneakers basses sans marque, même modèle, noir/blanc/bleu marine/bordeaux/beige, fond ivoire, lumière douce, sans personne, logo ni texte. Mode : génération originale, aucune photo fournisseur réelle utilisée.
