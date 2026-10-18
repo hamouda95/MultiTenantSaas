@@ -1,5 +1,14 @@
 "use client";
-import { useRef, useState, type ReactNode, type FormEvent } from "react";
+import {
+  useRef,
+  useState,
+  useId,
+  cloneElement,
+  isValidElement,
+  type ReactElement,
+  type ReactNode,
+  type FormEvent,
+} from "react";
 import { useParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -77,11 +86,16 @@ function amount(v: FormDataEntryValue | null, currency: string) {
   return value;
 }
 function Field({ label, children }: { label: string; children: ReactNode }) {
+  const id = useId();
   return (
-    <label className="block space-y-1 text-sm">
-      <span className="font-medium">{label}</span>
-      {children}
-    </label>
+    <div className="space-y-1 text-sm">
+      <label htmlFor={id} className="block font-medium">
+        {label}
+      </label>
+      {isValidElement(children)
+        ? cloneElement(children as ReactElement<{ id?: string }>, { id })
+        : children}
+    </div>
   );
 }
 function Text({

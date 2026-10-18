@@ -3,6 +3,7 @@ const { chromium } = require("playwright");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const { randomUUID } = require("node:crypto");
+let failurePage;
 (async () => {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
@@ -10,6 +11,7 @@ const { randomUUID } = require("node:crypto");
     viewport: { width: 1440, height: 1000 },
   });
   const page = await context.newPage();
+  failurePage = page;
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   const headers = { Origin: "http://localhost:3000" };
@@ -134,14 +136,12 @@ const { randomUUID } = require("node:crypto");
   await page
     .getByRole("button", { name: "Stocks & transferts", exact: true })
     .click();
-  const transfer = page
-    .locator("form")
-    .filter({
-      has: page.getByRole("button", {
-        name: "Confirmer le transfert",
-        exact: true,
-      }),
-    });
+  const transfer = page.locator("form").filter({
+    has: page.getByRole("button", {
+      name: "Confirmer le transfert",
+      exact: true,
+    }),
+  });
   await transfer
     .getByLabel("Variante", { exact: true })
     .selectOption(productId);
@@ -183,14 +183,12 @@ const { randomUUID } = require("node:crypto");
   await page
     .getByRole("cell", { name: "SALE:SALE-BROWSER", exact: true })
     .waitFor();
-  const payment = page
-    .locator("form")
-    .filter({
-      has: page.getByRole("button", {
-        name: "Enregistrer le règlement",
-        exact: true,
-      }),
-    });
+  const payment = page.locator("form").filter({
+    has: page.getByRole("button", {
+      name: "Enregistrer le règlement",
+      exact: true,
+    }),
+  });
   response = await context.request.get(`/api/v1/tenants/${tenantId}/business`);
   snap = await response.json();
   const invoice = snap.state.invoices.find((i) => i.kind === "RECEIVABLE");
@@ -242,7 +240,17 @@ const { randomUUID } = require("node:crypto");
   console.log(
     "Real browser holding → purchase → stock → sale → payment smoke passed.",
   );
-})().catch((error) => {
+})().catch(async (error) => {
   console.error(error);
+  if (failurePage) {
+    fs.mkdirSync("test-results", { recursive: true });
+    await failurePage
+      .screenshot({ path: "test-results/business-failure.png", fullPage: true })
+      .catch(() => {});
+    fs.writeFileSync(
+      "test-results/business-failure.html",
+      await failurePage.content().catch(() => ""),
+    );
+  }
   process.exit(1);
 });
