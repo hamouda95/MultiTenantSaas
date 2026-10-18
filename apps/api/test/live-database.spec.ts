@@ -233,9 +233,23 @@ describe.skipIf(!live)("Real PostgreSQL API and RLS integration", () => {
         })
       ).status,
     ).toBe(400);
-    await admin.query("UPDATE invitations SET expires_at=NOW() - INTERVAL '1 second' WHERE membership_id=$1", [memberId]);
-    expect((await request('/tenants/invitations/accept', { method: 'POST', cookie: viewerCookie, body: { token: inviteToken } })).status).toBe(400);
-    await admin.query("UPDATE invitations SET expires_at=NOW() + INTERVAL '1 day' WHERE membership_id=$1", [memberId]);
+    await admin.query(
+      "UPDATE invitations SET expires_at=NOW() - INTERVAL '1 second' WHERE membership_id=$1",
+      [memberId],
+    );
+    expect(
+      (
+        await request("/tenants/invitations/accept", {
+          method: "POST",
+          cookie: viewerCookie,
+          body: { token: inviteToken },
+        })
+      ).status,
+    ).toBe(400);
+    await admin.query(
+      "UPDATE invitations SET expires_at=NOW() + INTERVAL '1 day' WHERE membership_id=$1",
+      [memberId],
+    );
     expect(
       (
         await request("/tenants/invitations/accept", {
@@ -362,6 +376,221 @@ describe.skipIf(!live)("Real PostgreSQL API and RLS integration", () => {
       ).rejects.toThrow();
     } finally {
       client.release();
+    }
+  });
+  it("persists holding business commands, rejects stale writes and scopes company data", async () => {
+    const path = `/tenants/${tenantId}/business`;
+    const snapshot = await request(path, { cookie: ownerCookie });
+    expect(snapshot.status).toBe(200);
+    expect(snapshot.body.version).toBe(0);
+    let version = 0;
+    async function command(
+      action: unknown,
+      options: { cookie?: string; commandId?: string; version?: number } = {},
+    ) {
+      return request(`${path}/commands`, {
+        method: "POST",
+        cookie: options.cookie || ownerCookie,
+        body: {
+          commandId: options.commandId || randomUUID(),
+          version: options.version ?? version,
+          action,
+        },
+      });
+    }
+    const action = {
+      type: "company.create",
+      data: {
+        name: "Polaris",
+        country: "Tunisie",
+        currency: "TND",
+        brands: ["Polaris"],
+        leadDays: 7,
+        coverDays: 21,
+        minimumStock: 2,
+        modules: [
+          "purchasing",
+          "inventory",
+          "sales",
+          "finance",
+          "intelligence",
+        ],
+      },
+    };
+    const commandId = randomUUID();
+    const created = await command(action, { commandId });
+    expect(created.status).toBe(201);
+    version = created.body.version;
+    const companyId = created.body.state.companies[0].id;
+    const replay = await command(action, { commandId, version: 0 });
+    expect(replay.status).toBe(201);
+    expect(replay.body.version).toBe(1);
+    expect(replay.body.state.companies).toHaveLength(1);
+    expect(
+      (
+        await command(
+          { ...action, data: { ...action.data, name: "Tampered" } },
+          { commandId },
+        )
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await command(
+          { ...action, data: { ...action.data, name: "Stale" } },
+          { version: 0 },
+        )
+      ).status,
+    ).toBe(409);
+    const second = await command({
+      ...action,
+      data: { ...action.data, name: "Other company" },
+    });
+    expect(second.status).toBe(201);
+    version = second.body.version;
+    const company2 = second.body.state.companies[1].id;
+    const [a, b] = await Promise.all([
+      command({
+        type: "location.create",
+        companyId,
+        name: "Central",
+        kind: "WAREHOUSE",
+      }),
+      command({
+        type: "location.create",
+        companyId,
+        name: "Competing write",
+        kind: "STORE",
+      }),
+    ]);
+    expect([a.status, b.status].sort()).toEqual([201, 409]);
+    const current = await request(path, { cookie: ownerCookie });
+    version = current.body.version;
+    expect(current.body.state.locations).toHaveLength(1);
+    expect(
+      (
+        await request(`/tenants/${otherTenantId}/business`, {
+          cookie: otherCookie,
+        })
+      ).body.state.companies,
+    ).toHaveLength(0);
+    // Re-invite the previously removed viewer; active tenant membership alone gives no company access.
+    await admin.query(
+      "UPDATE tenant_quotas SET max_members=10 WHERE tenant_id=$1",
+      [tenantId],
+    );
+    const invitation = await request(`/tenants/${tenantId}/members`, {
+      method: "POST",
+      cookie: ownerCookie,
+      body: { email: viewerEmail, role: "Viewer" },
+    });
+    expect(invitation.status).toBe(201);
+    expect(
+      (
+        await request("/tenants/invitations/accept", {
+          method: "POST",
+          cookie: viewerCookie,
+          body: { token: invitation.body.invitationToken },
+        })
+      ).status,
+    ).toBe(201);
+    const viewerId = (await request("/auth/me", { cookie: viewerCookie })).body
+      .profile.id;
+    expect(
+      (await request(path, { cookie: viewerCookie })).body.state.companies,
+    ).toHaveLength(0);
+    const grant = await command({
+      type: "access.grant",
+      companyId,
+      userId: viewerId,
+      role: "OPERATIONS",
+    });
+    expect(grant.status).toBe(201);
+    version = grant.body.version;
+    const view = await request(path, { cookie: viewerCookie });
+    expect(view.body.state.companies.map((c: any) => c.id)).toEqual([
+      companyId,
+    ]);
+    expect(
+      (
+        await command(
+          {
+            type: "location.create",
+            companyId: company2,
+            name: "Forbidden",
+            kind: "STORE",
+          },
+          { cookie: viewerCookie },
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await command(
+          {
+            type: "account.create",
+            companyId,
+            name: "Forbidden bank",
+            kind: "BANK",
+            opening: 1000,
+            asOf: "2026-01-01",
+          },
+          { cookie: viewerCookie },
+        )
+      ).status,
+    ).toBe(403);
+    const product = await command({
+      type: "product.create",
+      companyId,
+      sku: "SHOE-42",
+      name: "Shoe",
+      brand: "Polaris",
+      size: "42",
+      color: "Black",
+    });
+    expect(product.status).toBe(201);
+    version = product.body.version;
+    const before = product.body.state;
+    const rejected = await command({
+      type: "stock.transfer",
+      companyId,
+      productId: product.body.state.products[0].id,
+      fromId: current.body.state.locations[0].id,
+      toId: randomUUID(),
+      quantity: 1,
+    });
+    expect(rejected.status).toBe(400); // insufficient source stock, no partial movement committed
+    const after = await request(path, { cookie: ownerCookie });
+    expect(after.body.state).toEqual(before);
+    expect(after.body.version).toBe(version);
+    // PostgreSQL independently protects the complete ledger, including on direct app-role access.
+    expect(
+      (await restricted.query("SELECT * FROM business_ledgers")).rows,
+    ).toHaveLength(0);
+    const connection = await restricted.connect();
+    try {
+      await connection.query("BEGIN");
+      await connection.query(
+        "SELECT set_config('app.current_tenant_id',$1,true)",
+        [otherTenantId],
+      );
+      expect(
+        (
+          await connection.query(
+            "SELECT * FROM business_ledgers WHERE tenant_id=$1",
+            [tenantId],
+          )
+        ).rows,
+      ).toHaveLength(0);
+      await expect(
+        connection.query(
+          "INSERT INTO business_ledgers (tenant_id) VALUES ($1)",
+          [tenantId],
+        ),
+      ).rejects.toThrow(/row-level security/);
+      await connection.query("ROLLBACK");
+    } finally {
+      connection.release();
     }
   });
   it("revokes logged-out sessions server-side", async () => {

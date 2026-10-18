@@ -2,7 +2,15 @@
 
 NestJS 11 + Next.js 15 workspace application with the uploaded Claude interface, French UI, tenant branding, PostgreSQL RLS, cookie sessions, invitations and role-based access.
 
-## Working features
+## Holding business management
+
+Workspaces now act as holdings with separate companies. Open **Gestion du holding** to configure Polaris, its stores and warehouse, then run purchases/imports, inventory, sales and recorded bank/cash operations with payables/receivables. Rule-based replenishment and a 30-day cash scenario explain their assumptions. Company grants are enforced server-side. The existing French design is retained.
+
+This is a working business pilot, **not a complete ERP**: live banking/POS, statutory accounting/tax, payroll, advanced AI and intercompany consolidation are not implemented. Read the [business scope, walkthrough and limits](docs/development/holding-business.md).
+
+Existing local install: `git pull --ff-only origin feat/claude-frontend-integration`, then `./scripts/local.sh`. The launcher applies additive migration 05 and preserves your database.
+
+## Working platform features
 
 - Register, password login, persisted HttpOnly session, logout with server-side revocation; suspended accounts are rejected on every request.
 - Create and switch workspaces. Creation atomically provisions branding, quotas, roles, owner membership and five module entitlements.
@@ -45,7 +53,7 @@ pnpm test
 pnpm --filter @saas/api test:integration
 ```
 
-The default suite has 35 tests using mocks/the legacy test-only SQL emulator, plus seven explicitly skipped live database tests. Only the separate live suite validates actual PostgreSQL policies and HTTP lifecycle behavior. CI provisions pgvector, applies migrations, runs both suites and builds both Docker targets. See [validation notes](docs/development/integration-validation.md) for actual results and environment limitations.
+The default suite has 42 tests using domain rules/mocks/the legacy test-only SQL emulator, plus eight explicitly skipped live database tests. Only the separate live suite validates actual PostgreSQL policies and HTTP lifecycle behavior. CI provisions pgvector, applies migrations, runs both suites and builds both Docker targets. See [validation notes](docs/development/integration-validation.md) for actual results and environment limitations.
 
 ## Deployment
 
@@ -53,13 +61,13 @@ See [deployment guide](docs/development/deployment.md). Root `compose.yml` runs 
 
 ## Roles
 
-| Capability | Owner | Member | Viewer |
-| --- | --- | --- | --- |
-| Dashboard, members, branding, quotas, module list | Yes | Yes | Yes |
-| Manage members, settings, module entitlements | Yes | No | No |
-| Audit history | Yes | No | No |
-| Document read permission | Yes | Yes | Yes |
-| Document write and AI use permissions | Yes | Yes | No |
+| Capability                                        | Owner | Member | Viewer |
+| ------------------------------------------------- | ----- | ------ | ------ |
+| Dashboard, members, branding, quotas, module list | Yes   | Yes    | Yes    |
+| Manage members, settings, module entitlements     | Yes   | No     | No     |
+| Audit history                                     | Yes   | No     | No     |
+| Document read permission                          | Yes   | Yes    | Yes    |
+| Document write and AI use permissions             | Yes   | Yes    | No     |
 
 Document/AI permissions are reserved for future services; their presence does not implement those services. The server remains authoritative; restricted API responses appear as permission errors in the interface.
 

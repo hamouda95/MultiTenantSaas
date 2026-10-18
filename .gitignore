@@ -44,3 +44,6 @@ dist/
 build/
 *.tsbuildinfo
 .DS_Store
+
+# Browser validation output
+test-results/

@@ -1,0 +1,548 @@
+import { randomUUID } from "node:crypto";
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from "@nestjs/common";
+import type {
+  BusinessState,
+  BusinessInvoice,
+  BusinessProduct,
+} from "@saas/types";
+import type { BusinessAction } from "./business.schema";
+
+export const emptyBusiness = (): BusinessState => ({
+  companies: [],
+  locations: [],
+  products: [],
+  accounts: [],
+  partners: [],
+  orders: [],
+  invoices: [],
+  payments: [],
+  movements: [],
+  sales: [],
+  expenses: [],
+  cashTransfers: [],
+  access: [],
+  events: [],
+});
+const fail = (message: string): never => {
+  throw new BadRequestException(message);
+};
+const safe = (value: number) =>
+  Number.isSafeInteger(value) && Math.abs(value) <= 9_000_000_000_000
+    ? value
+    : fail("Montant ou quantité hors limite");
+export const totalLines = (lines: { quantity: number; unitPrice: number }[]) =>
+  lines.reduce((sum, l) => safe(sum + safe(l.quantity * l.unitPrice)), 0);
+export const stock = (
+  s: BusinessState,
+  productId: string,
+  locationId?: string,
+) =>
+  s.movements
+    .filter(
+      (m) =>
+        m.productId === productId &&
+        (!locationId || m.locationId === locationId),
+    )
+    .reduce((n, m) => safe(n + m.quantity), 0);
+export const paid = (s: BusinessState, invoiceId: string) =>
+  s.payments
+    .filter((p) => p.invoiceId === invoiceId)
+    .reduce((n, p) => safe(n + p.amount), 0);
+export const outstanding = (s: BusinessState, i: BusinessInvoice) =>
+  i.amount - paid(s, i.id);
+export function balance(s: BusinessState, accountId: string) {
+  const account = s.accounts.find((a) => a.id === accountId);
+  if (!account) throw new NotFoundException("Compte introuvable");
+  return safe(
+    account.opening +
+      s.payments
+        .filter((p) => p.accountId === accountId)
+        .reduce(
+          (n, p) =>
+            n +
+            (s.invoices.find((i) => i.id === p.invoiceId)?.kind === "RECEIVABLE"
+              ? p.amount
+              : -p.amount),
+          0,
+        ) -
+      s.expenses
+        .filter((e) => e.accountId === accountId)
+        .reduce((n, e) => n + e.amount, 0) +
+      s.cashTransfers.reduce(
+        (n, t) =>
+          n +
+          (t.toId === accountId ? t.amount : 0) -
+          (t.fromId === accountId ? t.amount : 0),
+        0,
+      ),
+  );
+}
+export function companyRole(
+  s: BusinessState,
+  companyId: string,
+  userId: string,
+  owner: boolean,
+) {
+  return owner
+    ? "MANAGER"
+    : s.access.find((g) => g.companyId === companyId && g.userId === userId)
+        ?.role;
+}
+export function visibleBusiness(
+  s: BusinessState,
+  userId: string,
+  owner: boolean,
+): BusinessState {
+  if (owner) return s;
+  const ids = new Set(
+    s.access.filter((g) => g.userId === userId).map((g) => g.companyId),
+  );
+  return Object.fromEntries(
+    Object.entries(s).map(([key, values]) => [
+      key,
+      key === "companies"
+        ? (values as any[]).filter((x) => ids.has(x.id))
+        : (values as any[]).filter(
+            (x) =>
+              ids.has(x.companyId) && (key !== "access" || x.userId === userId),
+          ),
+    ]),
+  ) as unknown as BusinessState;
+}
+/** Executes only on a transaction-local copy; persisted atomically with audit. */
+export function applyBusiness(
+  s: BusinessState,
+  a: BusinessAction,
+  userId: string,
+  owner: boolean,
+  now = new Date().toISOString(),
+): BusinessState {
+  const date = now.slice(0, 10);
+  if (a.type === "company.create") {
+    if (!owner)
+      throw new ForbiddenException(
+        "Seul le propriétaire du holding peut créer une société",
+      );
+    if (s.companies.length >= 100) fail("Limite de 100 sociétés atteinte");
+    if (
+      s.companies.some(
+        (c) => c.name.toLowerCase() === a.data.name.toLowerCase(),
+      )
+    )
+      fail("Nom de société déjà utilisé");
+    const id = randomUUID();
+    s.companies.push({ id, ...a.data });
+    s.events.push({
+      id: randomUUID(),
+      companyId: id,
+      action: a.type,
+      actorId: userId,
+      date: now,
+      reference: a.data.name,
+    });
+    return s;
+  }
+  const companyId = a.companyId;
+  const company = s.companies.find((c) => c.id === companyId);
+  if (!company) throw new NotFoundException("Société introuvable");
+  const role = companyRole(s, companyId, userId, owner);
+  if (!role || role === "VIEWER")
+    throw new ForbiddenException(
+      "Accès en lecture seule ou société non autorisée",
+    );
+  const finance = [
+    "account.create",
+    "invoice.create",
+    "payment.create",
+    "expense.create",
+    "cash.transfer",
+  ];
+  if (
+    role === "FINANCE" &&
+    !finance.includes(a.type) &&
+    a.type !== "partner.create"
+  )
+    throw new ForbiddenException("Rôle financier requis pour cette opération");
+  if (
+    role === "OPERATIONS" &&
+    (finance.includes(a.type) ||
+      [
+        "company.configure",
+        "access.grant",
+        "access.revoke",
+        "stock.adjust",
+        "sale.return",
+      ].includes(a.type) ||
+      (a.type === "order.transition" &&
+        ["APPROVED", "CANCELLED"].includes(a.status)))
+  )
+    throw new ForbiddenException("Approbation du responsable requise");
+  const module = a.type.startsWith("order.")
+    ? "purchasing"
+    : a.type.startsWith("stock.")
+      ? "inventory"
+      : a.type.startsWith("sale.")
+        ? "sales"
+        : finance.includes(a.type)
+          ? "finance"
+          : null;
+  if (module && !company.modules.includes(module))
+    fail(`Module ${module} désactivé pour cette société`);
+  const own = <T extends { id: string; companyId: string }>(
+    items: T[],
+    id: string,
+  ): T => {
+    const item = items.find((x) => x.id === id && x.companyId === companyId);
+    if (!item)
+      throw new NotFoundException("Référence introuvable dans cette société");
+    return item;
+  };
+  const movement = (
+    productId: string,
+    locationId: string,
+    quantity: number,
+    reason: string,
+    sourceId: string,
+  ) => {
+    own(s.products, productId);
+    own(s.locations, locationId);
+    if (stock(s, productId, locationId) + quantity < 0)
+      fail("Stock insuffisant");
+    s.movements.push({
+      id: randomUUID(),
+      companyId,
+      productId,
+      locationId,
+      quantity,
+      reason,
+      sourceId,
+      date: now,
+    });
+  };
+  const receiptCost = (
+    product: BusinessProduct,
+    quantity: number,
+    cost: number,
+  ) => {
+    const before = stock(s, product.id);
+    product.cost = safe(
+      Math.round(
+        (before * product.cost + quantity * cost) / (before + quantity),
+      ),
+    );
+  };
+  const referenceUnique = (
+    reference: string,
+    items: { reference: string; companyId: string }[],
+  ) => {
+    if (
+      items.some(
+        (x) =>
+          x.companyId === companyId &&
+          x.reference.toLowerCase() === reference.toLowerCase(),
+      )
+    )
+      fail("Référence déjà utilisée");
+  };
+  const requireCash = (accountId: string, amount: number) => {
+    own(s.accounts, accountId);
+    if (balance(s, accountId) < amount) fail("Solde enregistré insuffisant");
+  };
+  const id = randomUUID();
+  switch (a.type) {
+    case "company.configure": {
+      if (a.data.currency !== company.currency)
+        fail(
+          "La devise est fixe. Créez une autre société pour changer de devise",
+        );
+      if (
+        s.companies.some(
+          (c) =>
+            c.id !== companyId &&
+            c.name.toLowerCase() === a.data.name.toLowerCase(),
+        )
+      )
+        fail("Nom de société déjà utilisé");
+      Object.assign(company, a.data);
+      break;
+    }
+    case "access.grant":
+    case "access.revoke": {
+      if (!owner)
+        throw new ForbiddenException(
+          "Seul le propriétaire du holding gère les accès",
+        );
+      s.access = s.access.filter(
+        (g) => !(g.companyId === companyId && g.userId === a.userId),
+      );
+      if (a.type === "access.grant")
+        s.access.push({ companyId, userId: a.userId, role: a.role });
+      break;
+    }
+    case "location.create":
+      s.locations.push({ id, companyId, name: a.name, kind: a.kind });
+      break;
+    case "product.create": {
+      if (
+        s.products.some(
+          (p) =>
+            p.companyId === companyId &&
+            p.sku.toLowerCase() === a.sku.toLowerCase(),
+        )
+      )
+        fail("SKU déjà utilisé");
+      s.products.push({
+        id,
+        companyId,
+        sku: a.sku,
+        name: a.name,
+        brand: a.brand,
+        size: a.size,
+        color: a.color,
+        cost: 0,
+      });
+      break;
+    }
+    case "partner.create":
+      s.partners.push({
+        id,
+        companyId,
+        name: a.name,
+        kind: a.kind,
+        email: a.email,
+      });
+      break;
+    case "account.create": {
+      if (a.asOf > date)
+        fail("Le solde initial ne peut pas être daté dans le futur");
+      s.accounts.push({
+        id,
+        companyId,
+        name: a.name,
+        kind: a.kind,
+        opening: a.opening,
+        source: "MANUAL",
+        asOf: a.asOf,
+      });
+      break;
+    }
+    case "order.create": {
+      referenceUnique(a.reference, s.orders);
+      if (own(s.partners, a.supplierId).kind !== "SUPPLIER")
+        fail("Fournisseur requis");
+      if (own(s.locations, a.locationId).kind !== "WAREHOUSE")
+        fail("Réception en entrepôt requise");
+      a.lines.forEach((l) => own(s.products, l.productId));
+      safe(totalLines(a.lines) + a.landedCharges);
+      s.orders.push({ ...a, id, status: "DRAFT", createdAt: now });
+      break;
+    }
+    case "order.transition": {
+      const order = own(s.orders, a.orderId);
+      const next: Record<string, string[]> = {
+        DRAFT: ["APPROVED", "CANCELLED"],
+        APPROVED: ["ORDERED", "CANCELLED"],
+        ORDERED: ["SHIPPED", "CANCELLED"],
+        SHIPPED: ["CUSTOMS"],
+        CUSTOMS: ["RECEIVED"],
+        RECEIVED: [],
+        CANCELLED: [],
+      };
+      if (!next[order.status].includes(a.status))
+        fail("Transition de commande non autorisée");
+      if (a.status === "RECEIVED") {
+        if (
+          !company.modules.includes("inventory") ||
+          !company.modules.includes("finance")
+        )
+          fail("Activez les modules stock et finance avant réception");
+        const base = totalLines(order.lines);
+        let allocated = 0;
+        const qty = order.lines.reduce((n, l) => n + l.quantity, 0);
+        order.lines.forEach((l, index) => {
+          const charge =
+            index === order.lines.length - 1
+              ? order.landedCharges - allocated
+              : Math.round((order.landedCharges * l.quantity) / qty);
+          allocated += charge;
+          receiptCost(
+            own(s.products, l.productId),
+            l.quantity,
+            (l.quantity * l.unitPrice + charge) / l.quantity,
+          );
+          movement(
+            l.productId,
+            order.locationId,
+            l.quantity,
+            "RECEIPT",
+            order.id,
+          );
+        });
+        if (base > 0)
+          s.invoices.push({
+            id: randomUUID(),
+            companyId,
+            kind: "PAYABLE",
+            reference: `PO:${order.reference}`,
+            partnerId: order.supplierId,
+            amount: base,
+            dueDate: order.dueDate,
+            sourceId: order.id,
+            createdAt: now,
+          });
+        // Freight/customs increase stock cost; their actual bills are entered separately.
+      }
+      order.status = a.status;
+      break;
+    }
+    case "stock.adjust": {
+      const product = own(s.products, a.productId);
+      if (a.quantity > 0) receiptCost(product, a.quantity, a.unitCost);
+      movement(
+        a.productId,
+        a.locationId,
+        a.quantity,
+        `ADJUSTMENT: ${a.reason}`,
+        id,
+      );
+      break;
+    }
+    case "stock.transfer": {
+      if (a.fromId === a.toId) fail("Choisissez deux emplacements différents");
+      movement(a.productId, a.fromId, -a.quantity, "TRANSFER", id);
+      movement(a.productId, a.toId, a.quantity, "TRANSFER", id);
+      break;
+    }
+    case "sale.create": {
+      if (
+        !company.modules.includes("inventory") ||
+        !company.modules.includes("finance")
+      )
+        fail("Activez stock et finance pour enregistrer une vente");
+      referenceUnique(a.reference, s.sales);
+      if (own(s.partners, a.customerId).kind !== "CUSTOMER")
+        fail("Client requis");
+      own(s.locations, a.locationId);
+      const total = totalLines(a.lines);
+      if (total === 0) fail("Une vente doit avoir un montant positif");
+      let cost = 0;
+      const unitCosts: Record<string, number> = {};
+      a.lines.forEach((l) => {
+        unitCosts[l.productId] = own(s.products, l.productId).cost;
+        cost = safe(cost + safe(unitCosts[l.productId] * l.quantity));
+        movement(l.productId, a.locationId, -l.quantity, "SALE", id);
+      });
+      s.sales.push({
+        id,
+        companyId,
+        reference: a.reference,
+        customerId: a.customerId,
+        locationId: a.locationId,
+        lines: a.lines,
+        unitCosts,
+        cost,
+        total,
+        returned: false,
+        date: now,
+      });
+      s.invoices.push({
+        id: randomUUID(),
+        companyId,
+        kind: "RECEIVABLE",
+        reference: `SALE:${a.reference}`,
+        partnerId: a.customerId,
+        amount: total,
+        dueDate: a.dueDate,
+        sourceId: id,
+        createdAt: now,
+      });
+      break;
+    }
+    case "sale.return": {
+      const sale = own(s.sales, a.saleId);
+      if (sale.returned) fail("Vente déjà retournée");
+      const invoice = s.invoices.find((i) => i.sourceId === sale.id);
+      if (!invoice) fail("Facture introuvable");
+      if (paid(s, invoice!.id) > 0)
+        fail(
+          "Retour après encaissement : remboursement/avoir non encore pris en charge",
+        );
+      sale.lines.forEach((l) => {
+        const product = own(s.products, l.productId);
+        receiptCost(product, l.quantity, sale.unitCosts[l.productId]);
+        movement(l.productId, sale.locationId, l.quantity, "RETURN", sale.id);
+      });
+      invoice!.amount = 0;
+      sale.returned = true;
+      break;
+    }
+    case "invoice.create": {
+      if (/^(PO|SALE):/i.test(a.reference))
+        fail("Préfixe réservé aux factures automatiques");
+      referenceUnique(a.reference, s.invoices);
+      if (
+        own(s.partners, a.partnerId).kind !==
+        (a.kind === "PAYABLE" ? "SUPPLIER" : "CUSTOMER")
+      )
+        fail("Type de partenaire incompatible");
+      s.invoices.push({ ...a, id, sourceId: "MANUAL", createdAt: now });
+      break;
+    }
+    case "payment.create": {
+      const invoice = own(s.invoices, a.invoiceId);
+      const account = own(s.accounts, a.accountId);
+      if (date < account.asOf) fail("Paiement antérieur au solde initial");
+      if (a.amount > outstanding(s, invoice))
+        fail("Le paiement dépasse le solde de la facture");
+      if (invoice.kind === "PAYABLE") requireCash(a.accountId, a.amount);
+      s.payments.push({
+        id,
+        companyId,
+        invoiceId: a.invoiceId,
+        accountId: a.accountId,
+        amount: a.amount,
+        date: now,
+      });
+      break;
+    }
+    case "expense.create":
+      requireCash(a.accountId, a.amount);
+      s.expenses.push({
+        id,
+        companyId,
+        accountId: a.accountId,
+        amount: a.amount,
+        description: a.description,
+        date: now,
+      });
+      break;
+    case "cash.transfer": {
+      if (a.fromId === a.toId) fail("Choisissez deux comptes différents");
+      own(s.accounts, a.toId);
+      requireCash(a.fromId, a.amount);
+      s.cashTransfers.push({
+        id,
+        companyId,
+        fromId: a.fromId,
+        toId: a.toId,
+        amount: a.amount,
+        date: now,
+      });
+      break;
+    }
+  }
+  s.events.push({
+    id,
+    companyId,
+    action: a.type,
+    actorId: userId,
+    date: now,
+    reference:
+      "reference" in a ? a.reference : "reason" in a ? a.reason : company.name,
+  });
+  return s;
+}

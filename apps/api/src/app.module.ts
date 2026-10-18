@@ -1,3 +1,4 @@
+import { BusinessModule } from "./modules/business/business.module";
 import { Module, MiddlewareConsumer, NestModule } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { DatabaseModule } from "./database/database.module";
@@ -18,6 +19,7 @@ import { Request, Response, NextFunction } from "express";
       envFilePath: [".env.local", ".env"],
     }),
     DatabaseModule,
+    BusinessModule,
     IdentityModule,
     TenantsModule,
     SettingsModule,

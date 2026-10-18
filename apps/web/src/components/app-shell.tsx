@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import {
   Check,
   ChevronsUpDown,
@@ -16,21 +16,27 @@ import {
   ScrollText,
   Users,
   X,
-} from 'lucide-react';
-import { api } from '@/lib/api';
-import { useToast } from '@/components/toast';
-import { LAST_TENANT_KEY, useAuth, useTenantAccess, useWorkspaces } from '@/lib/auth';
-import { cn, initials } from '@/lib/utils';
-import { Badge } from '@/components/ui/badge';
-import { useTenantSettings } from '@/components/tenant-theme';
-import { CreateWorkspaceDialog } from '@/components/create-workspace-dialog';
+} from "lucide-react";
+import { api } from "@/lib/api";
+import { useToast } from "@/components/toast";
+import {
+  LAST_TENANT_KEY,
+  useAuth,
+  useTenantAccess,
+  useWorkspaces,
+} from "@/lib/auth";
+import { cn, initials } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { useTenantSettings } from "@/components/tenant-theme";
+import { CreateWorkspaceDialog } from "@/components/create-workspace-dialog";
 
 const NAV = [
-  { href: '', label: "Vue d'ensemble", icon: LayoutDashboard },
-  { href: '/members', label: 'Membres', icon: Users },
-  { href: '/modules', label: 'Modules', icon: Puzzle },
-  { href: '/settings', label: 'Apparence', icon: Palette },
-  { href: '/audit', label: "Journal d'audit", icon: ScrollText },
+  { href: "/business", label: "Gestion du holding", icon: LayoutDashboard },
+  { href: "/platform", label: "Administration SaaS", icon: Puzzle },
+  { href: "/members", label: "Membres", icon: Users },
+  { href: "/modules", label: "Modules", icon: Puzzle },
+  { href: "/settings", label: "Apparence", icon: Palette },
+  { href: "/audit", label: "Journal d'audit", icon: ScrollText },
 ] as const;
 
 /** Popover minimal : fermeture au clic extérieur et sur Échap. */
@@ -40,20 +46,29 @@ function usePopover() {
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node))
+        setOpen(false);
     };
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
     return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
     };
   }, [open]);
   return { open, setOpen, ref };
 }
 
-function TenantLogo({ name, logoUrl, className }: { name: string; logoUrl?: string | null; className?: string }) {
+function TenantLogo({
+  name,
+  logoUrl,
+  className,
+}: {
+  name: string;
+  logoUrl?: string | null;
+  className?: string;
+}) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [logoUrl]);
   if (logoUrl && !failed) {
@@ -64,18 +79,31 @@ function TenantLogo({ name, logoUrl, className }: { name: string; logoUrl?: stri
         alt={`Logo ${name}`}
         referrerPolicy="no-referrer"
         onError={() => setFailed(true)}
-        className={cn('rounded-lg bg-white object-contain p-0.5', className)}
+        className={cn("rounded-lg bg-white object-contain p-0.5", className)}
       />
     );
   }
   return (
-    <div className={cn('flex items-center justify-center rounded-lg bg-brand text-xs font-bold text-brand-fg', className)}>
+    <div
+      className={cn(
+        "flex items-center justify-center rounded-lg bg-brand text-xs font-bold text-brand-fg",
+        className,
+      )}
+    >
       {initials(name)}
     </div>
   );
 }
 
-function WorkspaceSwitcher({ tenantId, name, logoUrl }: { tenantId: string; name: string; logoUrl?: string | null }) {
+function WorkspaceSwitcher({
+  tenantId,
+  name,
+  logoUrl,
+}: {
+  tenantId: string;
+  name: string;
+  logoUrl?: string | null;
+}) {
   const router = useRouter();
   const { open, setOpen, ref } = usePopover();
   const { data: workspaces } = useWorkspaces();
@@ -89,10 +117,16 @@ function WorkspaceSwitcher({ tenantId, name, logoUrl }: { tenantId: string; name
         aria-expanded={open}
         className="flex w-full items-center gap-3 rounded-lg border border-border bg-surface p-2 text-left transition hover:bg-surface-2"
       >
-        <TenantLogo name={name} logoUrl={logoUrl} className="h-9 w-9 shrink-0" />
+        <TenantLogo
+          name={name}
+          logoUrl={logoUrl}
+          className="h-9 w-9 shrink-0"
+        />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-semibold">{name}</span>
-          <span className="block text-xs text-muted">Changer d'organisation</span>
+          <span className="block text-xs text-muted">
+            Changer d'organisation
+          </span>
         </span>
         <ChevronsUpDown className="h-4 w-4 shrink-0 text-muted" />
       </button>
@@ -119,7 +153,9 @@ function WorkspaceSwitcher({ tenantId, name, logoUrl }: { tenantId: string; name
                     {initials(w.name)}
                   </span>
                   <span className="flex-1 truncate">{w.name}</span>
-                  {w.tenantId === tenantId && <Check className="h-4 w-4 text-accent" />}
+                  {w.tenantId === tenantId && (
+                    <Check className="h-4 w-4 text-accent" />
+                  )}
                 </button>
               </li>
             ))}
@@ -144,7 +180,10 @@ function WorkspaceSwitcher({ tenantId, name, logoUrl }: { tenantId: string; name
           </div>
         </div>
       )}
-      <CreateWorkspaceDialog open={creating} onClose={() => setCreating(false)} />
+      <CreateWorkspaceDialog
+        open={creating}
+        onClose={() => setCreating(false)}
+      />
     </div>
   );
 }
@@ -181,7 +220,11 @@ function UserMenu() {
           </div>
           <button
             role="menuitem"
-            onClick={() => { void logout().catch(() => toast('error', 'Déconnexion impossible. Réessayez.')); }}
+            onClick={() => {
+              void logout().catch(() =>
+                toast("error", "Déconnexion impossible. Réessayez."),
+              );
+            }}
             className="mt-1 flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-surface-2"
           >
             <LogOut className="h-4 w-4" /> Se déconnecter
@@ -192,33 +235,49 @@ function UserMenu() {
   );
 }
 
-export function AppShell({ tenantId, children }: { tenantId: string; children: ReactNode }) {
+export function AppShell({
+  tenantId,
+  children,
+}: {
+  tenantId: string;
+  children: ReactNode;
+}) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { workspace, roles } = useTenantAccess(tenantId);
-  const { data: tenant } = useQuery({ queryKey: ['tenant', tenantId], queryFn: () => api.tenant(tenantId) });
+  const { data: tenant } = useQuery({
+    queryKey: ["tenant", tenantId],
+    queryFn: () => api.tenant(tenantId),
+  });
   const { data: settings } = useTenantSettings(tenantId);
 
-  const name = tenant?.name ?? workspace?.name ?? 'Organisation';
+  const name = tenant?.name ?? workspace?.name ?? "Organisation";
   const base = `/t/${tenantId}`;
 
   useEffect(() => setMobileOpen(false), [pathname]);
 
   const sidebar = (
     <div className="flex h-full flex-col gap-6 p-4">
-      <WorkspaceSwitcher tenantId={tenantId} name={name} logoUrl={settings?.settings.logoUrl} />
+      <WorkspaceSwitcher
+        tenantId={tenantId}
+        name={name}
+        logoUrl={settings?.settings.logoUrl}
+      />
       <nav aria-label="Navigation principale" className="flex-1 space-y-1">
         {NAV.map(({ href, label, icon: Icon }) => {
           const full = `${base}${href}`;
-          const active = href === '' ? pathname === base : pathname.startsWith(full);
+          const active =
+            href === "" ? pathname === base : pathname.startsWith(full);
           return (
             <Link
               key={label}
               href={full}
-              aria-current={active ? 'page' : undefined}
+              aria-current={active ? "page" : undefined}
               className={cn(
-                'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition',
-                active ? 'bg-accent-tint text-accent' : 'text-muted hover:bg-surface-2 hover:text-fg',
+                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition",
+                active
+                  ? "bg-accent-tint text-accent"
+                  : "text-muted hover:bg-surface-2 hover:text-fg",
               )}
             >
               <Icon className="h-4 w-4" />
@@ -230,7 +289,15 @@ export function AppShell({ tenantId, children }: { tenantId: string; children: R
       <div className="rounded-lg bg-surface-2 p-3 text-xs text-muted">
         <p className="mb-1.5 font-medium text-fg">Votre rôle</p>
         <div className="flex flex-wrap gap-1">
-          {roles.length ? roles.map((r) => <Badge key={r} className="bg-surface">{r}</Badge>) : <span>Aucun rôle</span>}
+          {roles.length ? (
+            roles.map((r) => (
+              <Badge key={r} className="bg-surface">
+                {r}
+              </Badge>
+            ))
+          ) : (
+            <span>Aucun rôle</span>
+          )}
         </div>
       </div>
     </div>
@@ -246,7 +313,11 @@ export function AppShell({ tenantId, children }: { tenantId: string; children: R
       {/* Drawer mobile */}
       {mobileOpen && (
         <div className="fixed inset-0 z-40 lg:hidden">
-          <div className="absolute inset-0 animate-fade-in bg-black/50" onClick={() => setMobileOpen(false)} aria-hidden />
+          <div
+            className="absolute inset-0 animate-fade-in bg-black/50"
+            onClick={() => setMobileOpen(false)}
+            aria-hidden
+          />
           <aside className="absolute inset-y-0 left-0 w-72 animate-slide-in-left border-r border-border bg-surface">
             <button
               onClick={() => setMobileOpen(false)}
@@ -293,7 +364,9 @@ export function PageHeader({
     <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-        {description && <p className="mt-1 text-sm text-muted">{description}</p>}
+        {description && (
+          <p className="mt-1 text-sm text-muted">{description}</p>
+        )}
       </div>
       {actions}
     </div>

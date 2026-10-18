@@ -7,3 +7,5 @@ The uploaded Claude design lives in `apps/web`, using the App Router, Tailwind, 
 Routes: `/login`, `/workspaces`, `/invite#<token>`, `/t/<tenantId>`, and its `/members`, `/settings`, `/modules`, `/audit` pages. Queries are keyed by tenant, cleared at login/logout and authorized server-side. Workspace branding changes persist in PostgreSQL and update theme tokens. Owners receive invitation links to copy privately. Custom domains remain configuration metadata.
 
 `mock-api/server.mjs` is the original isolated UI fixture and is never started by the deployment or called by the integrated UI. It still models the historical authentication contract, so it is not a security test. Prefer the real API and integration suite for functional verification.
+
+Business routes: `/t/<tenantId>` redirects to `/business`; the previous platform dashboard lives at `/platform`. The business page reuses the original shell, brand tokens, cards, inputs and buttons. See [holding operations](holding-business.md).

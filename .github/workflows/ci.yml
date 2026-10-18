@@ -15,13 +15,13 @@ jobs:
           POSTGRES_USER: saas_admin
           POSTGRES_PASSWORD: ci_admin_password
           POSTGRES_DB: saas_production
-        ports: ['5432:5432']
+        ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U saas_admin -d saas_production"
           --health-interval 5s --health-timeout 5s --health-retries 20
     env:
-      NEXT_TELEMETRY_DISABLED: '1'
-      TURBO_TELEMETRY_DISABLED: '1'
+      NEXT_TELEMETRY_DISABLED: "1"
+      TURBO_TELEMETRY_DISABLED: "1"
       JWT_SECRET: ci-only-secret-at-least-thirty-two-characters
       WEB_URL: http://localhost:3000
       DATABASE_URL: postgresql://saas_app_user:ci_app_password@localhost:5432/saas_production
@@ -62,10 +62,21 @@ jobs:
           docker compose config --quiet
           docker compose -f compose.yml -f compose.local.yml config --quiet
           docker compose build
-          docker compose up -d --wait
+          docker compose -f compose.yml -f compose.local.yml up -d --wait
           curl --fail --retry 10 --retry-delay 2 --retry-connrefused http://127.0.0.1:3000/login > /dev/null
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:3000/api/v1/auth/me)" = 401
           node -e "fetch('http://127.0.0.1:3000/api/v1/auth/register', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({padding:'x'.repeat(200000)})}).then(r=>{if(r.status!==413)process.exit(1)})"
+      - name: Real browser business workflow and responsive screenshots
+        run: |
+          npm install --prefix /tmp/saas-browser --no-audit --no-fund playwright@1.58.2
+          node /tmp/saas-browser/node_modules/playwright/cli.js install --with-deps chromium
+          NODE_PATH=/tmp/saas-browser/node_modules node scripts/business-browser-smoke.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: business-browser-screenshots
+          path: test-results/
+          if-no-files-found: ignore
       - name: Deployment smoke logs and cleanup
         if: always()
         env:

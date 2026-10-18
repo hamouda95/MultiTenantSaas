@@ -6,7 +6,7 @@
 // 1. Identity & Multi-Tenancy
 // ------------------------------------------------------------------------------
 
-export type TenantStatus = 'ACTIVE' | 'SUSPENDED' | 'DECOMMISSIONED';
+export type TenantStatus = "ACTIVE" | "SUSPENDED" | "DECOMMISSIONED";
 
 export interface Tenant {
   id: string;
@@ -17,7 +17,7 @@ export interface Tenant {
   updatedAt: Date;
 }
 
-export type UserStatus = 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
+export type UserStatus = "ACTIVE" | "INACTIVE" | "SUSPENDED";
 
 export interface User {
   id: string;
@@ -30,7 +30,7 @@ export interface User {
   updatedAt: Date;
 }
 
-export type MembershipStatus = 'INVITED' | 'ACTIVE' | 'SUSPENDED' | 'REVOKED';
+export type MembershipStatus = "INVITED" | "ACTIVE" | "SUSPENDED" | "REVOKED";
 
 export interface Membership {
   id: string;
@@ -66,7 +66,7 @@ export interface Role {
 // 2. Tenant Settings & Branding
 // ------------------------------------------------------------------------------
 
-export type ThemeMode = 'LIGHT' | 'DARK' | 'SYSTEM';
+export type ThemeMode = "LIGHT" | "DARK" | "SYSTEM";
 
 export interface TenantSettings {
   id: string;
@@ -86,13 +86,13 @@ export interface TenantSettings {
 // ------------------------------------------------------------------------------
 
 export type StandardModuleKey =
-  | 'ai_chat'
-  | 'rag_documents'
-  | 'predictive_analytics'
-  | 'agent_tools'
-  | 'nl_sql'
-  | 'audit_exports'
-  | 'custom_branding';
+  | "ai_chat"
+  | "rag_documents"
+  | "predictive_analytics"
+  | "agent_tools"
+  | "nl_sql"
+  | "audit_exports"
+  | "custom_branding";
 
 export interface TenantModule {
   id: string;
@@ -126,7 +126,7 @@ export interface TenantQuota {
 // 5. Data Placement (Hybrid Database Architecture)
 // ------------------------------------------------------------------------------
 
-export type DataPlacementMode = 'SHARED' | 'DEDICATED';
+export type DataPlacementMode = "SHARED" | "DEDICATED";
 
 export interface TenantDataPlacement {
   id: string;
@@ -172,7 +172,7 @@ export interface BusinessEvent<T = Record<string, unknown>> {
 // 7. Documents & Vector Storage (RAG)
 // ------------------------------------------------------------------------------
 
-export type DocumentStatus = 'PENDING' | 'PROCESSING' | 'READY' | 'FAILED';
+export type DocumentStatus = "PENDING" | "PROCESSING" | "READY" | "FAILED";
 
 export interface Document {
   id: string;
@@ -204,9 +204,9 @@ export interface DocumentChunk {
 // 8. AI Capabilities & Execution
 // ------------------------------------------------------------------------------
 
-export type AICapability = 'CHAT' | 'RAG' | 'PREDICTION' | 'AGENT' | 'NL_SQL';
-export type AIRunStatus = 'RUNNING' | 'COMPLETED' | 'FAILED';
-export type ToolApprovalStatus = 'NONE' | 'PENDING' | 'APPROVED' | 'REJECTED';
+export type AICapability = "CHAT" | "RAG" | "PREDICTION" | "AGENT" | "NL_SQL";
+export type AIRunStatus = "RUNNING" | "COMPLETED" | "FAILED";
+export type ToolApprovalStatus = "NONE" | "PENDING" | "APPROVED" | "REJECTED";
 
 export interface Conversation {
   id: string;
@@ -221,7 +221,7 @@ export interface Message {
   id: string;
   tenantId: string;
   conversationId: string;
-  role: 'user' | 'assistant' | 'system' | 'tool';
+  role: "user" | "assistant" | "system" | "tool";
   content: string;
   tokenCount: number;
   metadata: Record<string, unknown>;
@@ -301,3 +301,6 @@ export interface RequestSecurityContext {
   user: AuthenticatedUserContext;
   tenant?: TenantContext;
 }
+
+export * from "./business";
+export * from "./business-insights";
