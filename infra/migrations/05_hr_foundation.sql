@@ -1,5 +1,8 @@
 -- HR foundation: additive, tenant-isolated records. Company grants are checked by API.
 BEGIN;
+INSERT INTO permissions (key, description) VALUES
+  ('hr:manage', 'Manage employees, contracts and leave decisions')
+ON CONFLICT (key) DO NOTHING;
 CREATE TABLE IF NOT EXISTS hr_employees (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
