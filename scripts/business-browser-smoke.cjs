@@ -5,10 +5,20 @@ const fs = require("node:fs");
 const { randomUUID } = require("node:crypto");
 let failurePage;
 (async () => {
-  const browser = await chromium.launch({ headless: true });
+  const cameraFile = "/tmp/saas-camera.y4m";
+  require("./camera-fixture.cjs")(cameraFile, "POS-42");
+  const browser = await chromium.launch({
+    headless: true,
+    args: [
+      "--use-fake-ui-for-media-stream",
+      "--use-fake-device-for-media-stream",
+      `--use-file-for-fake-video-capture=${cameraFile}`,
+    ],
+  });
   const context = await browser.newContext({
     baseURL: "http://localhost:3000",
     viewport: { width: 1440, height: 1000 },
+    permissions: ["camera"],
   });
   const page = await context.newPage();
   failurePage = page;
@@ -79,6 +89,7 @@ let failurePage;
   await cmd({
     type: "product.create",
     name: "Leather shoes",
+    model: "T9800",
     sku: "SHOE-42-BLACK",
     brand: "Polaris",
     size: "42",
@@ -238,6 +249,125 @@ let failurePage;
     95,
   );
   await page.setViewportSize({ width: 1440, height: 1000 });
+  await page
+    .getByRole("button", { name: "Achats & imports", exact: true })
+    .click();
+  const funding = page
+    .locator("form")
+    .filter({
+      has: page.getByRole("button", {
+        name: "Enregistrer le financement",
+        exact: true,
+      }),
+    });
+  await funding
+    .getByLabel("Référence financement", { exact: true })
+    .fill("LOAN-BROWSER");
+  await funding.getByLabel("Banque prêteuse", { exact: true }).fill("Bank A");
+  await funding
+    .getByLabel("Capital financé (TND)", { exact: true })
+    .fill("100");
+  await funding
+    .getByLabel("Intérêts et frais convenus (TND)", { exact: true })
+    .fill("10");
+  await funding
+    .getByLabel("Échéance finale du crédit", { exact: true })
+    .fill(new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10));
+  await funding
+    .getByRole("button", { name: "Enregistrer le financement", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Confirmer le déblocage", exact: true })
+    .click();
+  await page.getByText("En remboursement", { exact: true }).waitFor();
+  response = await context.request.get(`/api/v1/tenants/${tenantId}/business`);
+  snap = await response.json();
+  const loanId = snap.state.financings[0].id;
+  const repayment = page
+    .locator("form")
+    .filter({
+      has: page.getByRole("button", {
+        name: "Enregistrer le remboursement",
+        exact: true,
+      }),
+    });
+  await repayment
+    .getByLabel("Crédit à rembourser", { exact: true })
+    .selectOption(loanId);
+  await repayment
+    .getByLabel("Capital remboursé (TND)", { exact: true })
+    .fill("40");
+  await repayment.getByLabel("Intérêts payés (TND)", { exact: true }).fill("2");
+  await repayment
+    .getByRole("button", { name: "Enregistrer le remboursement", exact: true })
+    .click();
+  await page.getByText(/Capital 40,000/).waitFor();
+  const article = page
+    .locator("form")
+    .filter({
+      has: page.getByRole("button", { name: "Créer l’article", exact: true }),
+    });
+  await article
+    .getByLabel("Code modèle (ex. T9800)", { exact: true })
+    .fill("T9800");
+  await article
+    .getByLabel("SKU de la variante", { exact: true })
+    .fill("T9800-GREEN");
+  await article
+    .getByLabel("Désignation de l’article", { exact: true })
+    .fill("Leather shoes");
+  await article
+    .getByLabel("Couleur de l’article", { exact: true })
+    .fill("Green");
+  await article
+    .getByRole("button", { name: "Créer l’article", exact: true })
+    .click();
+  await article.getByLabel("SKU de la variante", { exact: true }).waitFor();
+  // Wait for successful creation/reset before the following authoritative snapshot.
+  await page.waitForFunction(
+    () => document.querySelector('input[name="sku"]').value === "",
+  );
+  response = await context.request.get(`/api/v1/tenants/${tenantId}/business`);
+  snap = await response.json();
+  await cmd({
+    type: "stock.adjust",
+    productId: snap.state.products.at(-1).id,
+    locationId: storeId,
+    quantity: 2,
+    unitCost: 1000,
+    reason: "Opening browser variant",
+  });
+  for (const color of ["White", "Red", "Blue"]) {
+    await cmd({
+      type: "product.create",
+      model: "T9800",
+      name: "Leather shoes",
+      sku: `T9800-${color}`,
+      brand: "Polaris",
+      size: "42",
+      color,
+    });
+    await cmd({
+      type: "stock.adjust",
+      productId: snap.state.products.at(-1).id,
+      locationId: storeId,
+      quantity: 2,
+      unitCost: 1000,
+      reason: "Opening browser variant",
+    });
+  }
+  await page
+    .getByRole("button", { name: "Stocks & transferts", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Actualiser", exact: true }).click();
+  await page
+    .getByRole("img", { name: /Répartition du stock T9800.*Total 103/ })
+    .waitFor();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({
+    path: "test-results/inventory-colours.png",
+    fullPage: true,
+  });
   await cmd({
     type: "account.create",
     name: "POS Till",
@@ -266,7 +396,38 @@ let failurePage;
   await page
     .getByRole("button", { name: "Ouvrir la session", exact: true })
     .click();
-  await page.getByRole("button", { name: "Ajouter", exact: true }).click();
+  await page.getByText("Nouveau client", { exact: true }).click();
+  await page
+    .getByLabel("Nom du nouveau client", { exact: true })
+    .fill("Amira Browser");
+  await page
+    .getByLabel("Téléphone du nouveau client", { exact: true })
+    .fill("+21612345678");
+  await page
+    .getByRole("button", { name: "Créer le client en Caisse", exact: true })
+    .click();
+  await page.getByRole("option", { name: /Amira Browser/ }).waitFor();
+  await page
+    .getByLabel("Client de la vente", { exact: true })
+    .selectOption({ label: "Amira Browser · +21612345678" });
+  await page
+    .getByRole("button", { name: "Scanner avec la caméra", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Retirer une unité", exact: true })
+    .waitFor({ timeout: 30000 });
+  await page
+    .getByRole("button", { name: "Retirer une unité", exact: true })
+    .click();
+  const scan = page.getByLabel(
+    "Scanner un code-barres ou rechercher un article",
+    { exact: true },
+  );
+  await scan.fill("POS-42");
+  await scan.press("Enter");
+  await page
+    .getByRole("button", { name: "Retirer une unité", exact: true })
+    .waitFor();
   await page
     .getByRole("button", {
       name: "Valider la vente et le règlement",
@@ -307,6 +468,25 @@ let failurePage;
     path: "test-results/pos-mobile.png",
     fullPage: true,
   });
+  await page
+    .getByLabel("Rechercher dans les ventes", { exact: true })
+    .fill("Amira Browser");
+  await page
+    .getByRole("button", { name: "Voir le ticket", exact: true })
+    .waitFor();
+  response = await context.request.get(`/api/v1/tenants/${tenantId}/business`);
+  snap = await response.json();
+  assert.equal(snap.state.financingPayments[0].principal, 40000);
+  assert.equal(
+    snap.state.sales.at(-1).customerId,
+    snap.state.partners.find((p) => p.name === "Amira Browser").id,
+  );
+  assert.equal(
+    snap.state.movements
+      .filter((m) => m.productId === productId)
+      .reduce((n, m) => n + m.quantity, 0),
+    94,
+  );
   await page.goto("/administration");
   await page
     .getByRole("heading", { name: "Administration des holdings", exact: true })

@@ -1,3 +1,4 @@
+import { financingCashFlow, financingOutstanding } from "@saas/types";
 import { applyPos } from "./pos.engine";
 import { randomUUID } from "node:crypto";
 import {
@@ -60,6 +61,7 @@ export function balance(s: BusinessState, accountId: string) {
   if (!account) throw new NotFoundException("Compte introuvable");
   return safe(
     account.opening +
+      financingCashFlow(s, accountId) +
       (s.cashAdjustments || [])
         .filter((x) => x.accountId === accountId)
         .reduce((n, x) => n + x.amount, 0) +
@@ -200,8 +202,16 @@ export function applyBusiness(
   const role = companyRole(s, companyId, userId, owner, membershipId);
   if (role === "CASHIER" || role === "STORE_MANAGER")
     throw new ForbiddenException("Utilisez uniquement la Caisse autorisée");
-  if (a.type === "product.pricing" && role !== "MANAGER")
+  if (
+    (a.type === "product.pricing" ||
+      (a.type === "product.create" && a.salePrice !== undefined)) &&
+    role !== "MANAGER"
+  )
     throw new ForbiddenException("Responsable requis pour les tarifs");
+  if (a.type === "stock.adjust" && !owner)
+    throw new ForbiddenException(
+      "Ajustement réservé au propriétaire ou administrateur plateforme",
+    );
   const openCash = new Set(
     (s.posSessions || [])
       .filter((p) => !p.closedAt)
@@ -225,11 +235,15 @@ export function applyBusiness(
     "payment.create",
     "expense.create",
     "cash.transfer",
+    "financing.create",
+    "financing.draw",
+    "financing.repay",
   ];
   if (
     role === "FINANCE" &&
     !finance.includes(a.type) &&
-    a.type !== "partner.create"
+    a.type !== "partner.create" &&
+    a.type !== "partner.update"
   )
     throw new ForbiddenException("Rôle financier requis pour cette opération");
   if (
@@ -389,10 +403,20 @@ export function applyBusiness(
         )
       )
         fail("SKU déjà utilisé");
+      if (
+        a.barcode &&
+        s.products.some(
+          (p) => p.companyId === companyId && p.barcode === a.barcode,
+        )
+      )
+        fail("Code-barres déjà utilisé");
       s.products.push({
         id,
         companyId,
         sku: a.sku,
+        model: a.model || a.name,
+        salePrice: a.salePrice,
+        barcode: a.barcode || "",
         name: a.name,
         brand: a.brand,
         size: a.size,
@@ -408,8 +432,67 @@ export function applyBusiness(
         name: a.name,
         kind: a.kind,
         email: a.email,
+        phone: a.phone || "",
+        address: a.address || "",
       });
       break;
+    case "partner.update": {
+      const p = own(s.partners, a.partnerId);
+      Object.assign(p, {
+        name: a.name,
+        email: a.email,
+        phone: a.phone,
+        address: a.address,
+      });
+      break;
+    }
+    case "financing.create": {
+      s.financings ??= [];
+      referenceUnique(a.reference, s.financings);
+      if (own(s.accounts, a.accountId).kind !== "BANK")
+        fail("Compte bancaire requis");
+      if (a.orderId && own(s.orders, a.orderId).status === "CANCELLED")
+        fail("Commande annulée");
+      if (a.dueDate < date) fail("Échéance antérieure à la création");
+      safe(a.principal + a.interest);
+      s.financings.push({ ...a, id, createdAt: now });
+      break;
+    }
+    case "financing.draw": {
+      const f = own(s.financings || [], a.financingId);
+      if (f.drawnAt) fail("Financement déjà débloqué");
+      if (f.orderId && own(s.orders, f.orderId).status === "CANCELLED")
+        fail("Commande annulée");
+      f.drawnAt = now;
+      safe(balance(s, f.accountId));
+      break;
+    }
+    case "financing.repay": {
+      const f = own(s.financings || [], a.financingId);
+      if (!f.drawnAt) fail("Débloquez le financement avant remboursement");
+      if (own(s.accounts, a.accountId).kind !== "BANK")
+        fail("Compte bancaire requis");
+      const remaining = financingOutstanding(s, f.id),
+        total = safe(a.principal + a.interest);
+      if (
+        !total ||
+        a.principal > remaining.principal ||
+        a.interest > remaining.interest
+      )
+        fail("Remboursement supérieur au capital ou aux intérêts dus");
+      if (balance(s, a.accountId) < total) fail("Solde bancaire insuffisant");
+      s.financingPayments ??= [];
+      s.financingPayments.push({
+        id,
+        companyId,
+        financingId: f.id,
+        accountId: a.accountId,
+        principal: a.principal,
+        interest: a.interest,
+        date: now,
+      });
+      break;
+    }
     case "account.create": {
       if (a.asOf > date)
         fail("Le solde initial ne peut pas être daté dans le futur");

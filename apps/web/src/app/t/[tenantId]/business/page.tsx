@@ -30,6 +30,13 @@ import {
   replenishment,
 } from "@saas/types";
 import type { BusinessState, BusinessCompany, BusinessLine } from "@saas/types";
+import { InventoryAnalysis } from "@/components/business/inventory-analysis";
+import { PartnerDirectory } from "@/components/business/partner-directory";
+import {
+  ArticleCreator,
+  FinancingPanel,
+} from "@/components/business/purchasing-tools";
+import Link from "next/link";
 import { api, ApiError } from "@/lib/api";
 import { PageHeader } from "@/components/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -489,9 +496,11 @@ function CompanyWizard({
 export default function BusinessPage() {
   const { tenantId } = useParams<{ tenantId: string }>();
   const client = useQueryClient();
+  const busyRef = useRef(false);
   const query = useQuery({
     queryKey: ["business", tenantId],
     queryFn: () => api.business(tenantId),
+    refetchInterval: busyRef.current ? false : 5000,
     retry: false,
   });
   const [tab, setTab] = useState("overview");
@@ -511,6 +520,7 @@ export default function BusinessPage() {
   });
   async function run(action: Record<string, unknown>): Promise<boolean> {
     if (!query.data || busy) return false;
+    busyRef.current = true;
     setBusy(true);
     setError("");
     setNotice("");
@@ -540,6 +550,7 @@ export default function BusinessPage() {
       }
       return false;
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }
@@ -771,6 +782,7 @@ export default function BusinessPage() {
                 "Société",
                 "Banques",
                 "Caisses",
+                "Dette bancaire",
                 "À payer",
                 "À encaisser",
                 "Stock valorisé",
@@ -788,6 +800,7 @@ export default function BusinessPage() {
                   </button>,
                   money(m.bank, c.currency),
                   money(m.cash, c.currency),
+                  money(m.bankDebt, c.currency),
                   money(m.payables, c.currency),
                   money(m.receivables, c.currency),
                   money(m.inventory, c.currency),
@@ -978,6 +991,7 @@ export default function BusinessPage() {
                   withCompany({
                     type: "product.create",
                     sku: text(d, "sku"),
+                    model: text(d, "model"),
                     name: text(d, "name"),
                     brand: text(d, "brand"),
                     size: text(d, "size"),
@@ -987,6 +1001,7 @@ export default function BusinessPage() {
               }
             >
               <Text name="sku" label="SKU unique" />
+              <Text name="model" label="Code modèle" required={false} />
               <Text name="name" label="Nom du produit" />
               <Text name="brand" label="Marque" required={false} />
               <Text name="size" label="Taille" required={false} />
@@ -1083,6 +1098,31 @@ export default function BusinessPage() {
       )}
       {company && tab === "purchasing" && (
         <>
+          <PartnerDirectory
+            key={company.id + "suppliers"}
+            partners={partners}
+            kind="SUPPLIER"
+            editable={(operate || finance) && enabled("purchasing")}
+            busy={busy}
+            run={(a) => run(withCompany(a))}
+          />
+          {operate && enabled("purchasing") && (
+            <ArticleCreator
+              canPrice={manage}
+              currency={currency}
+              busy={busy}
+              run={(a) => run(withCompany(a))}
+            />
+          )}
+          <FinancingPanel
+            key={company.id}
+            state={s}
+            companyId={company.id}
+            currency={currency}
+            editable={finance && enabled("finance") && enabled("purchasing")}
+            busy={busy}
+            run={(a) => run(withCompany(a))}
+          />
           {!enabled("purchasing") && (
             <p className="mb-4 text-sm text-muted">
               Module achats désactivé. Le responsable peut l’activer dans la
@@ -1239,7 +1279,15 @@ export default function BusinessPage() {
       )}
       {company && tab === "inventory" && (
         <>
-          {manage && enabled("inventory") && (
+          <InventoryAnalysis
+            key={company.id}
+            state={s}
+            companyId={company.id}
+            updatedAt={query.dataUpdatedAt}
+            refreshing={query.isFetching}
+            offline={query.isRefetchError}
+          />
+          {snapshot.holdingOwner && manage && enabled("inventory") && (
             <Form
               title="Stock initial ou ajustement justifié"
               busy={busy}
@@ -1348,6 +1396,27 @@ export default function BusinessPage() {
       )}
       {company && tab === "sales" && (
         <>
+          <div className="mb-5 rounded-xl border border-accent bg-accent-tint p-5">
+            <h2 className="font-semibold">Vente en magasin</h2>
+            <p className="mb-3 text-sm text-muted">
+              Caisse tactile, douchette, caméra téléphone, clients et
+              historique.
+            </p>
+            <Link
+              className="inline-block rounded-lg bg-accent px-4 py-2 text-white"
+              href={`/t/${tenantId}/pos`}
+            >
+              Ouvrir la Caisse
+            </Link>
+          </div>
+          <PartnerDirectory
+            key={company.id + "customers"}
+            partners={partners}
+            kind="CUSTOMER"
+            editable={(operate || finance) && enabled("sales")}
+            busy={busy}
+            run={(a) => run(withCompany(a))}
+          />
           {operate && enabled("sales") && (
             <Form
               title="Enregistrer une vente"

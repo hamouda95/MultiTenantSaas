@@ -3,6 +3,8 @@ import { useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { currencyDigits } from "@saas/types";
+import { CameraScanner } from "@/components/business/camera-scanner";
+import { ScanLine, Users, Receipt, Activity } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { PageHeader } from "@/components/app-shell";
 import { Card } from "@/components/ui/card";
@@ -13,13 +15,19 @@ const select = "h-10 w-full rounded-lg border border-border bg-surface px-3";
 export default function Pos() {
   const { tenantId } = useParams<{ tenantId: string }>(),
     client = useQueryClient();
+  const busyRef = useRef(false);
   const q = useQuery({
     queryKey: ["pos", tenantId],
     queryFn: () => api.pos(tenantId),
+    refetchInterval: busyRef.current ? false : 5000,
     retry: false,
   });
   const [storeId, setStoreId] = useState(""),
     [search, setSearch] = useState(""),
+    [customerId, setCustomerId] = useState(""),
+    [clientSearch, setClientSearch] = useState(""),
+    [historySearch, setHistorySearch] = useState(""),
+    [historyDate, setHistoryDate] = useState(""),
     [cart, setCart] = useState<Record<string, number>>({}),
     [discount, setDiscount] = useState("0"),
     [card, setCard] = useState(""),
@@ -73,6 +81,7 @@ export default function Pos() {
   const ticket = data?.tickets.find((t) => t.id === ticketId);
   async function run(action: Record<string, unknown>) {
     if (!data || busy) return false;
+    busyRef.current = true;
     setBusy(true);
     setError("");
     try {
@@ -100,6 +109,7 @@ export default function Pos() {
       }
       return false;
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }
@@ -111,11 +121,50 @@ export default function Pos() {
     const p = products.find((p) => p.id === id);
     return p ? `${p.name} · ${p.size} ${p.color}` : id;
   };
+  function scan(code: string) {
+    if (busy) return;
+    const value = code.trim();
+    const p = products.find(
+      (p) => p.barcode === value || p.sku.toLowerCase() === value.toLowerCase(),
+    );
+    if (!p) {
+      setSearch(value);
+      setError("Code non reconnu dans cette société. Vérifiez le catalogue.");
+      return;
+    }
+    if (!session) {
+      setSearch(value);
+      setError("Ouvrez une session pour ajouter un article.");
+      return;
+    }
+    const stock =
+      data?.availability.find(
+        (a) => a.productId === p.id && a.locationId === store?.id,
+      )?.quantity || 0;
+    if (!p.price || stock <= (cart[p.id] || 0)) {
+      setError("Article sans tarif ou stock insuffisant.");
+      return;
+    }
+    setCart((cart) => ({ ...cart, [p.id]: (cart[p.id] || 0) + 1 }));
+    setSearch("");
+    setError("");
+  }
+  const customers = (data?.customers || []).filter(
+    (c) => c.companyId === store?.companyId,
+  );
+  const storeTickets = (data?.tickets || []).filter(
+    (t) => t.locationId === store?.id,
+  );
+  const today = new Date().toLocaleDateString("en-CA");
+  const dayTickets = storeTickets.filter(
+    (t) =>
+      new Date(t.date).toLocaleDateString("en-CA") === today && !t.returned,
+  );
   if (q.isLoading) return <p role="status">Chargement de la Caisse…</p>;
   if (q.error)
     return <ErrorState error={q.error} onRetry={() => q.refetch()} />;
   return (
-    <>
+    <div className="pos-console">
       <PageHeader
         title="Caisse"
         description="Vendre dans votre magasin et consulter le stock physique du réseau autorisé."
@@ -129,6 +178,56 @@ export default function Pos() {
           </Button>
         }
       />
+      <section className="mb-5 overflow-hidden rounded-2xl border border-cyan-400/30 bg-gradient-to-br from-slate-950 via-slate-900 to-cyan-950 p-5 text-white shadow-xl">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="rounded-xl border border-cyan-300/30 bg-cyan-300/10 p-3">
+              <ScanLine className="h-7 w-7 text-cyan-300" />
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-[0.2em] text-cyan-200">
+                Commerce terminal
+              </p>
+              <h2 className="text-xl font-semibold">
+                {store?.companyName || "Votre réseau"} ·{" "}
+                {store?.name || "Caisse"}
+              </h2>
+            </div>
+          </div>
+          <p
+            role="status"
+            className="flex items-center gap-2 text-xs text-cyan-100"
+          >
+            <Activity className="h-4 w-4" />
+            {q.isRefetchError
+              ? "Connexion interrompue · actualisez avant de vendre"
+              : `Stock synchronisé à ${new Date(q.dataUpdatedAt).toLocaleTimeString("fr-FR")} · 5 s`}
+          </p>
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-3">
+          {[
+            [Receipt, "Ventes visibles aujourd’hui", String(dayTickets.length)],
+            [
+              Activity,
+              "Encaissements visibles du jour",
+              money(dayTickets.reduce((n, t) => n + t.total, 0)),
+            ],
+            [Users, "Clients de la société", String(customers.length)],
+          ].map(([Icon, label, value]) => {
+            const I = Icon as typeof Receipt;
+            return (
+              <div
+                key={String(label)}
+                className="rounded-xl border border-white/10 bg-white/5 p-3"
+              >
+                <I className="mb-2 h-4 w-4 text-cyan-300" />
+                <p className="text-2xl font-semibold">{String(value)}</p>
+                <p className="text-xs text-slate-300">{String(label)}</p>
+              </div>
+            );
+          })}
+        </div>
+      </section>
       {error && (
         <p
           role="alert"
@@ -154,6 +253,11 @@ export default function Pos() {
                   onChange={(e) => {
                     setStoreId(e.target.value);
                     setCart({});
+                    setCustomerId("");
+                    setClientSearch("");
+                    setCard("");
+                    setCashGiven("");
+                    setDiscount("0");
                     setTicketId("");
                   }}
                 >
@@ -222,13 +326,7 @@ export default function Pos() {
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
-                  const p = products.find(
-                    (p) => p.barcode === search || p.sku === search,
-                  );
-                  if (p?.price && session) {
-                    setCart({ ...cart, [p.id]: (cart[p.id] || 0) + 1 });
-                    setSearch("");
-                  }
+                  scan(search);
                 }}
               >
                 <Field label="Scanner un code-barres ou rechercher un article">
@@ -236,12 +334,18 @@ export default function Pos() {
                     <Input
                       {...props}
                       value={search}
+                      disabled={busy}
                       onChange={(e) => setSearch(e.target.value)}
                       placeholder="Code-barres, SKU, nom, taille…"
                     />
                   )}
                 </Field>
               </form>
+              <CameraScanner disabled={busy} onCode={scan} />
+              <p className="text-xs text-muted">
+                Douchette USB/Bluetooth : placez le curseur dans le champ,
+                scannez et terminez par Entrée.
+              </p>
               <div className="max-h-[32rem] space-y-3 overflow-y-auto">
                 {products
                   .filter((p) =>
@@ -252,7 +356,7 @@ export default function Pos() {
                   .map((p) => (
                     <div
                       key={p.id}
-                      className="rounded-lg border border-border p-3"
+                      className="rounded-xl border border-border p-4 transition-colors hover:border-accent"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div>
@@ -305,6 +409,25 @@ export default function Pos() {
             </Card>
             <Card className="space-y-4 p-5">
               <h2 className="font-semibold">Panier</h2>
+              <Field label="Client de la vente">
+                {(props) => (
+                  <select
+                    {...props}
+                    className={select}
+                    value={customerId}
+                    onChange={(e) => setCustomerId(e.target.value)}
+                  >
+                    <option value="">Client comptoir configuré</option>
+                    {customers.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                        {c.phone ? ` · ${c.phone}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </Field>
+
               {lines.length === 0 && (
                 <p className="text-sm text-muted">Ajoutez un article.</p>
               )}
@@ -363,6 +486,7 @@ export default function Pos() {
                       action({
                         type: "pos.checkout",
                         sessionId: session?.id,
+                        ...(customerId ? { customerId } : {}),
                         items: lines.map((l) => ({
                           productId: l.product.id,
                           quantity: l.quantity,
@@ -374,6 +498,7 @@ export default function Pos() {
                       }),
                     );
                     if (ok) {
+                      setCustomerId("");
                       setCart({});
                       setCard("");
                       setCashGiven("");
@@ -485,10 +610,147 @@ export default function Pos() {
               </form>
             </Card>
           )}
+          <Card className="mt-5 space-y-4 p-5">
+            <h2 className="font-semibold">Base clients</h2>
+            <Field label="Rechercher un client Caisse">
+              {(props) => (
+                <Input
+                  {...props}
+                  value={clientSearch}
+                  onChange={(e) => setClientSearch(e.target.value)}
+                  placeholder="Nom, téléphone, email…"
+                />
+              )}
+            </Field>
+            <div className="grid max-h-60 gap-2 overflow-auto sm:grid-cols-2">
+              {customers
+                .filter((c) =>
+                  `${c.name} ${c.phone} ${c.email}`
+                    .toLowerCase()
+                    .includes(clientSearch.toLowerCase()),
+                )
+                .map((c) => (
+                  <button
+                    key={c.id}
+                    disabled={busy}
+                    className="rounded-lg border border-border p-3 text-left text-sm hover:border-accent"
+                    onClick={() => {
+                      setCustomerId(c.id);
+                      setError("");
+                    }}
+                  >
+                    <strong>{c.name}</strong>
+                    <span className="block text-xs text-muted">
+                      {c.phone || "Sans téléphone"} · {c.email || "Sans email"}
+                    </span>
+                    <span className="text-xs text-accent">
+                      {customerId === c.id
+                        ? "Client sélectionné"
+                        : "Sélectionner pour la prochaine vente"}
+                    </span>
+                  </button>
+                ))}
+            </div>
+            <details>
+              <summary className="cursor-pointer text-sm font-medium text-accent">
+                Nouveau client
+              </summary>
+              <form
+                className="mt-3 grid gap-3 sm:grid-cols-2"
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  const form = e.currentTarget,
+                    d = new FormData(form);
+                  if (
+                    await run(
+                      action({
+                        type: "pos.customer.create",
+                        locationId: store.id,
+                        name: String(d.get("name")),
+                        email: String(d.get("email")),
+                        phone: String(d.get("phone")),
+                      }),
+                    )
+                  )
+                    form.reset();
+                }}
+              >
+                <Field label="Nom du nouveau client">
+                  {(props) => (
+                    <Input
+                      {...props}
+                      name="name"
+                      required
+                      maxLength={160}
+                      disabled={busy}
+                    />
+                  )}
+                </Field>
+                <Field label="Téléphone du nouveau client">
+                  {(props) => (
+                    <Input
+                      {...props}
+                      name="phone"
+                      maxLength={40}
+                      disabled={busy}
+                    />
+                  )}
+                </Field>
+                <Field label="Email du nouveau client">
+                  {(props) => (
+                    <Input
+                      {...props}
+                      name="email"
+                      type="email"
+                      maxLength={254}
+                      disabled={busy}
+                    />
+                  )}
+                </Field>
+                <Button disabled={busy}>Créer le client en Caisse</Button>
+              </form>
+            </details>
+          </Card>
           <Card className="mt-5 space-y-3 p-5">
             <h2 className="font-semibold">Tickets du magasin</h2>
-            {data?.tickets
-              .filter((t) => t.locationId === store.id)
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Rechercher dans les ventes">
+                {(props) => (
+                  <Input
+                    {...props}
+                    value={historySearch}
+                    onChange={(e) => setHistorySearch(e.target.value)}
+                    placeholder="Ticket, client, article…"
+                  />
+                )}
+              </Field>
+              <Field label="Date des ventes">
+                {(props) => (
+                  <Input
+                    {...props}
+                    type="date"
+                    value={historyDate}
+                    onChange={(e) => setHistoryDate(e.target.value)}
+                  />
+                )}
+              </Field>
+            </div>
+            <p className="text-xs text-muted">
+              Le caissier voit ses tickets ; un responsable voit ceux de ses
+              magasins autorisés.
+            </p>
+            {storeTickets
+              .filter(
+                (t) =>
+                  (!historyDate ||
+                    new Date(t.date).toLocaleDateString("en-CA") ===
+                      new Date(historyDate + "T12:00:00").toLocaleDateString(
+                        "en-CA",
+                      )) &&
+                  `${t.reference} ${customers.find((c) => c.id === t.customerId)?.name || ""} ${t.lines.map((l) => productName(l.productId)).join(" ")}`
+                    .toLowerCase()
+                    .includes(historySearch.toLowerCase()),
+              )
               .slice()
               .reverse()
               .map((t) => (
@@ -498,6 +760,11 @@ export default function Pos() {
                 >
                   <p className="text-sm">
                     {t.reference} · {money(t.total)}
+                    <span className="block text-xs text-muted">
+                      {new Date(t.date).toLocaleString("fr-FR")} ·{" "}
+                      {customers.find((c) => c.id === t.customerId)?.name ||
+                        "Client comptoir"}
+                    </span>
                     {t.returned ? " · Remboursé" : ""}
                   </p>
                   <div className="flex gap-2">
@@ -543,6 +810,11 @@ export default function Pos() {
                 </h2>
                 <p>{ticket.reference}</p>
                 <p>{new Date(ticket.date).toLocaleString("fr-FR")}</p>
+                <p>
+                  Client :{" "}
+                  {customers.find((c) => c.id === ticket.customerId)?.name ||
+                    "Comptoir"}
+                </p>
                 {ticket.lines.map((l) => (
                   <p key={l.productId}>
                     {productName(l.productId)} · {l.quantity} ×{" "}
@@ -618,6 +890,6 @@ export default function Pos() {
           </Card>
         </>
       )}
-    </>
+    </div>
   );
 }

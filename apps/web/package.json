@@ -14,6 +14,7 @@
   "dependencies": {
     "@saas/types": "workspace:*",
     "@tanstack/react-query": "^5.59.0",
+    "@zxing/browser": "0.1.5",
     "clsx": "^2.1.1",
     "lucide-react": "^0.453.0",
     "next": "15.5.28",

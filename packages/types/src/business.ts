@@ -21,6 +21,7 @@ export interface BusinessProduct {
   id: string;
   companyId: string;
   sku: string;
+  model?: string;
   name: string;
   brand: string;
   size: string;
@@ -44,6 +45,8 @@ export interface BusinessPartner {
   name: string;
   kind: "SUPPLIER" | "CUSTOMER";
   email: string;
+  phone?: string;
+  address?: string;
 }
 export interface BusinessLine {
   productId: string;
@@ -168,6 +171,8 @@ export interface BusinessState {
   cashTransfers: BusinessCashTransfer[];
   access: BusinessAccess[];
   events: BusinessEvent[];
+  financings?: BusinessFinancing[];
+  financingPayments?: FinancingPayment[];
   posConfigs?: PosConfig[];
   posSessions?: PosSession[];
   cashAdjustments?: {
@@ -247,6 +252,13 @@ export interface PosSnapshot {
     barcode: string;
     price: number;
   }[];
+  customers: {
+    id: string;
+    companyId: string;
+    name: string;
+    email: string;
+    phone: string;
+  }[];
   availability: {
     productId: string;
     locationId: string;
@@ -259,10 +271,34 @@ export interface PosSnapshot {
     companyId: string;
     locationId: string;
     reference: string;
+    customerId: string;
     date: string;
     total: number;
     returned: boolean;
     lines: BusinessLine[];
     tenders: { method: "CASH" | "CARD"; amount: number }[];
   }[];
+}
+
+export interface BusinessFinancing {
+  id: string;
+  companyId: string;
+  reference: string;
+  bank: string;
+  accountId: string;
+  orderId?: string;
+  principal: number;
+  interest: number;
+  dueDate: string;
+  createdAt: string;
+  drawnAt?: string;
+}
+export interface FinancingPayment {
+  id: string;
+  companyId: string;
+  financingId: string;
+  accountId: string;
+  principal: number;
+  interest: number;
+  date: string;
 }

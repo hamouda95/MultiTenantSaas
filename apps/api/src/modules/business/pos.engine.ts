@@ -87,6 +87,15 @@ export function posSnapshot(
         maxDiscountBps: config?.maxDiscountBps || 0,
       };
     }),
+    customers: s.partners
+      .filter((p) => p.kind === "CUSTOMER" && companies.has(p.companyId))
+      .map((p) => ({
+        id: p.id,
+        companyId: p.companyId,
+        name: p.name,
+        email: p.email,
+        phone: p.phone || "",
+      })),
     products: s.products
       .filter((p) => companies.has(p.companyId))
       .map((p) => ({
@@ -135,6 +144,7 @@ export function posSnapshot(
         companyId: x.companyId,
         locationId: x.locationId,
         reference: x.reference,
+        customerId: x.customerId,
         date: x.date,
         total: x.total,
         returned: x.returned,
@@ -178,7 +188,9 @@ export function applyPos(
         )?.locationId;
   if (
     !locationId ||
-    !posStores(s, u, owner, m).some((l) => l.id === locationId)
+    !posStores(s, u, owner, m).some(
+      (l) => l.id === locationId && l.companyId === a.companyId,
+    )
   )
     throw new ForbiddenException("Magasin non autorisé");
   const manager = manages(s, a.companyId, locationId, u, owner, m),
@@ -187,7 +199,17 @@ export function applyPos(
     config = s.posConfigs.find(
       (x) => x.locationId === locationId && x.companyId === a.companyId,
     );
-  if (a.type === "pos.configure") {
+  if (a.type === "pos.customer.create") {
+    s.partners.push({
+      id,
+      companyId: a.companyId,
+      name: a.name,
+      kind: "CUSTOMER",
+      email: a.email,
+      phone: a.phone,
+      address: "",
+    });
+  } else if (a.type === "pos.configure") {
     if (!globalManager)
       throw new ForbiddenException(
         "Configuration réservée au responsable société",
@@ -273,6 +295,16 @@ export function applyPos(
           if (!session.variance) session.reconciledAt = now;
         }
         if (a.type === "pos.checkout") {
+          const customerId = a.customerId || config!.customerId;
+          if (
+            !s.partners.some(
+              (p) =>
+                p.id === customerId &&
+                p.companyId === a.companyId &&
+                p.kind === "CUSTOMER",
+            )
+          )
+            fail("Client non autorisé");
           if (!manager && a.discountBps > config!.maxDiscountBps)
             throw new ForbiddenException("Remise non autorisée");
           const lines = a.items.map((l) => {
@@ -318,7 +350,7 @@ export function applyPos(
             id,
             companyId: a.companyId,
             reference,
-            customerId: config!.customerId,
+            customerId,
             locationId,
             lines,
             unitCosts,
@@ -334,7 +366,7 @@ export function applyPos(
             companyId: a.companyId,
             kind: "RECEIVABLE",
             reference: `SALE:${reference}`,
-            partnerId: config!.customerId,
+            partnerId: customerId,
             amount: total,
             dueDate: now.slice(0, 10),
             sourceId: id,

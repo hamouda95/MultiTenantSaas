@@ -99,3 +99,31 @@ Les deux emails doivent correspondre. Ne pas placer la connexion ou le mot de pa
 La comptabilité légale et TVA, consolidation intersociétés/changes, paie, réservations, transferts en transit, réceptions/retours partiels, pièces jointes, intégrations banque/terminal, récupération de compte/email, abonnements commerciaux, assistant IA et modèles prédictifs ne sont pas encore implémentés. Les fonctionnalités de pilotage restent fondées sur les opérations saisies et des règles explicables.
 
 Avant commercialisation à grande échelle : normaliser les collections actuellement limitées à 8 Mo par holding, ajouter pagination et archivage technique, tester la charge, définir les règles de conservation et tester sauvegarde/restauration. Ne pas considérer cette version comme un ERP complet certifié.
+
+## Modules Achat, Vente et Inventory — compléments
+
+### Achat : fournisseurs, articles et financement banque
+
+Dans **Achats & imports**, le répertoire Fournisseurs permet de rechercher, créer et modifier nom, email, téléphone et adresse. Les responsables/équipes opérationnelles autorisés peuvent créer des articles directement dans le module. Le code modèle (ex. `T9800`) relie les variantes ; le SKU et le code-barres identifient une variante couleur/taille. Le prix de vente à la création reste réservé au responsable société. Les anciens articles sans code modèle sont regroupés par leur nom.
+
+**Financement banque** enregistre une convention de crédit, le compte de type Banque, le capital, les intérêts/frais convenus, l’échéance finale et éventuellement la commande financée. Le responsable/Finance confirme ensuite **le déblocage** : le capital augmente le solde bancaire et la dette bancaire, sans créer de vente. Une même convention ne peut être débloquée qu’une fois. Les remboursements distinguent capital et intérêts, ne dépassent pas les montants dus et nécessitent un solde bancaire suffisant. L’historique est conservé. Le récapitulatif holding distingue la dette bancaire de la dette fournisseurs ; la prévision de trésorerie déduit les crédits dus sous 30 jours.
+
+Il s’agit du suivi de crédits convenus à l’extérieur du SaaS. Aucune demande de prêt, connexion bancaire ou exécution de virement n’est déclenchée. Les intérêts sont un montant total saisi manuellement ; les tableaux d’amortissement, calculs d’intérêts variables et écritures de comptabilité légale ne sont pas automatisés.
+
+### Vente : Caisse, clients et scan
+
+Le module **Ventes** ouvre la nouvelle interface Caisse et présente une base clients recherchable/modifiable. En Caisse, un collaborateur peut créer un client de sa société, puis le sélectionner pour la vente ; le ticket et la créance sont liés au bon client. Sans sélection, le client comptoir configuré est utilisé. Les fournisseurs et clients d’autres sociétés restent hors du périmètre des caissiers.
+
+- **Douchette USB/Bluetooth** : sélectionner le champ de recherche, scanner un SKU/code-barres puis envoyer Entrée. Chaque lecture ajoute une unité disponible et tarifée.
+- **Caméra téléphone** : cliquer **Scanner avec la caméra**, autoriser l’accès dans le navigateur, cadrer un seul code. Le scan ajoute une unité puis ferme la caméra. Le décodage se fait sur l’appareil ; aucune image n’est téléversée. Fermer le scanner ou quitter l’écran arrête la capture. HTTPS et une caméra utilisable sont nécessaires ; en cas de refus, la douchette et la saisie restent disponibles.
+- **Historique** : rechercher un ticket, un client ou un article et filtrer par date. Un caissier voit ses tickets ; un responsable voit les tickets de ses magasins autorisés. Les compteurs du jour respectent le même périmètre et la devise du magasin.
+
+Le pipeline navigateur teste le décodage d’un vrai code Code 128 à partir d’une caméra Chromium simulée, ainsi que la saisie clavier. Les appareils physiques iPhone/Android, autorisations système, autofocus et lecteurs matériels doivent encore être essayés sur les appareils des magasins. Le logiciel ne communique pas directement avec un terminal bancaire et les tickets restent non fiscaux.
+
+### Inventory : stock et camembert par couleur
+
+Dans **Stocks & transferts**, choisir un modèle puis un emplacement ou toute la société. Pour `T9800`, créer cinq variantes avec le même code modèle et cinq couleurs différentes : le graphique regroupe alors les tailles par couleur, avec quantités et pourcentages. Le tableau détaille réceptionné, vendu, retourné, autres mouvements et disponible. Un stock nul affiche un graphique vide, sans pourcentages fictifs.
+
+**Disponible = réceptions d’achats − ventes + retours + stock initial/ajustements + transferts nets.** Une commande n’entre dans le disponible qu’à réception. Les transferts sont neutres au total de la société, mais changent le stock des emplacements. La Caisse et le stock se rafraîchissent automatiquement toutes les cinq secondes lorsque l’écran est actif ; ce n’est pas une diffusion instantanée par websocket. Une version concurrente entraîne une actualisation avant validation, sans écraser la vente d’un autre magasin.
+
+**Seuls le propriétaire du holding et l’administrateur plateforme** peuvent saisir un stock initial ou un ajustement, avec un motif obligatoire. Un simple responsable société, caissier, Finance ou Opérations ne peut pas modifier ces quantités, même par appel direct à l’API. Les réceptions et ventes autorisées continuent à produire leurs mouvements normaux. Les quantités ne sont jamais modifiées silencieusement dans un compteur : un mouvement traçable conserve l’historique.

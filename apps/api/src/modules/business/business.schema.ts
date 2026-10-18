@@ -79,6 +79,57 @@ export const BusinessCommandSchema = z
         .strict(),
       z
         .object({
+          type: z.literal("pos.customer.create"),
+          companyId: id,
+          locationId: id,
+          name: text,
+          email: z.union([z.literal(""), z.string().email().max(254)]),
+          phone: z.string().trim().max(40),
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("partner.update"),
+          companyId: id,
+          partnerId: id,
+          name: text,
+          email: z.union([z.literal(""), z.string().email().max(254)]),
+          phone: z.string().trim().max(40),
+          address: z.string().trim().max(300),
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("financing.create"),
+          companyId: id,
+          reference: text,
+          bank: text,
+          accountId: id,
+          orderId: id.optional(),
+          principal: positive,
+          interest: money,
+          dueDate: date,
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("financing.draw"),
+          companyId: id,
+          financingId: id,
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("financing.repay"),
+          companyId: id,
+          financingId: id,
+          accountId: id,
+          principal: money,
+          interest: money,
+        })
+        .strict(),
+      z
+        .object({
           type: z.literal("pos.open"),
           companyId: id,
           locationId: id,
@@ -90,6 +141,7 @@ export const BusinessCommandSchema = z
           type: z.literal("pos.checkout"),
           companyId: id,
           sessionId: id,
+          customerId: id.optional(),
           items: z
             .array(
               z
@@ -176,6 +228,9 @@ export const BusinessCommandSchema = z
           type: z.literal("product.create"),
           companyId: id,
           sku: text,
+          model: z.string().trim().max(160).optional(),
+          salePrice: positive.optional(),
+          barcode: z.string().trim().max(80).optional(),
           name: text,
           brand: z.string().trim().max(160),
           size: z.string().trim().max(80),
@@ -189,6 +244,8 @@ export const BusinessCommandSchema = z
           name: text,
           kind: z.enum(["SUPPLIER", "CUSTOMER"]),
           email: z.union([z.literal(""), z.string().email().max(254)]),
+          phone: z.string().trim().max(40).optional(),
+          address: z.string().trim().max(300).optional(),
         })
         .strict(),
       z

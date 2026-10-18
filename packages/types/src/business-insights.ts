@@ -25,6 +25,7 @@ export function productStock(
 export function accountBalance(s: BusinessState, id: string) {
   return (
     (s.accounts.find((a) => a.id === id)?.opening || 0) +
+    financingCashFlow(s, id) +
     (s.cashAdjustments || [])
       .filter((x) => x.accountId === id)
       .reduce((n, x) => n + x.amount, 0) +
@@ -84,13 +85,36 @@ export function companyMetrics(
     revenue,
     cogs,
     expenses,
+    bankDebt: (s.financings || [])
+      .filter((f) => f.companyId === c.id)
+      .reduce((n, f) => n + financingOutstanding(s, f.id).total, 0),
     grossMargin: revenue - cogs,
-    operatingContribution: revenue - cogs - expenses,
+    operatingContribution:
+      revenue -
+      cogs -
+      expenses -
+      (s.financingPayments || [])
+        .filter((p) => p.companyId === c.id)
+        .reduce((n, p) => n + p.interest, 0),
     payables: due("PAYABLE"),
     receivables: due("RECEIVABLE"),
     payables30: due("PAYABLE", 30),
     receivables30: due("RECEIVABLE", 30),
-    cash30: bank + cash + due("RECEIVABLE", 30) - due("PAYABLE", 30),
+    cash30:
+      bank +
+      cash +
+      due("RECEIVABLE", 30) -
+      due("PAYABLE", 30) -
+      (s.financings || [])
+        .filter(
+          (f) =>
+            f.companyId === c.id &&
+            f.dueDate <=
+              new Date(now.getTime() + 30 * 86400000)
+                .toISOString()
+                .slice(0, 10),
+        )
+        .reduce((n, f) => n + financingOutstanding(s, f.id).total, 0),
     inventory: s.products
       .filter((p) => p.companyId === c.id)
       .reduce((n, p) => n + productStock(s, p.id) * p.cost, 0),
@@ -189,4 +213,72 @@ export function replenishment(
     }
   }
   return result;
+}
+
+/** Drawdowns are debt, never sales. Repayments reduce cash by principal + interest. */
+export function financingCashFlow(s: BusinessState, accountId: string) {
+  return (
+    (s.financings || [])
+      .filter((f) => f.accountId === accountId && f.drawnAt)
+      .reduce((n, f) => n + f.principal, 0) -
+    (s.financingPayments || [])
+      .filter((p) => p.accountId === accountId)
+      .reduce((n, p) => n + p.principal + p.interest, 0)
+  );
+}
+export function financingOutstanding(s: BusinessState, financingId: string) {
+  const f = s.financings?.find((f) => f.id === financingId);
+  if (!f?.drawnAt) return { principal: 0, interest: 0, total: 0 };
+  const paid = (s.financingPayments || []).filter(
+    (p) => p.financingId === financingId,
+  );
+  const principal = f.principal - paid.reduce((n, p) => n + p.principal, 0);
+  const interest = f.interest - paid.reduce((n, p) => n + p.interest, 0);
+  return { principal, interest, total: principal + interest };
+}
+export function modelInventory(
+  s: BusinessState,
+  companyId: string,
+  model: string,
+  locationId?: string,
+) {
+  const variants = s.products.filter(
+    (p) => p.companyId === companyId && (p.model || p.name) === model,
+  );
+  const colors = new Map<
+    string,
+    {
+      color: string;
+      received: number;
+      sold: number;
+      returned: number;
+      other: number;
+      stock: number;
+    }
+  >();
+  for (const p of variants) {
+    const color = p.color || "Sans couleur";
+    const row = colors.get(color) || {
+      color,
+      received: 0,
+      sold: 0,
+      returned: 0,
+      other: 0,
+      stock: 0,
+    };
+    for (const m of s.movements.filter(
+      (m) =>
+        m.companyId === companyId &&
+        m.productId === p.id &&
+        (!locationId || m.locationId === locationId),
+    )) {
+      if (m.reason === "RECEIPT") row.received += m.quantity;
+      else if (m.reason === "SALE") row.sold -= m.quantity;
+      else if (m.reason === "RETURN") row.returned += m.quantity;
+      else row.other += m.quantity;
+      row.stock += m.quantity;
+    }
+    colors.set(color, row);
+  }
+  return [...colors.values()].sort((a, b) => a.color.localeCompare(b.color));
 }

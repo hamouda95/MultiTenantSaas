@@ -53,7 +53,7 @@ pnpm test
 pnpm --filter @saas/api test:integration
 ```
 
-The default suite has 49 tests using domain rules/mocks/the legacy test-only SQL emulator, plus ten explicitly skipped live database tests. Only the separate live suite validates actual PostgreSQL policies and HTTP lifecycle behavior. CI provisions pgvector, applies migrations, runs both suites and builds both Docker targets. See [validation notes](docs/development/integration-validation.md) for actual results and environment limitations.
+The default suite has 55 tests using domain rules/mocks/the legacy test-only SQL emulator, plus ten explicitly skipped live database tests. Only the separate live suite validates actual PostgreSQL policies and HTTP lifecycle behavior. CI provisions pgvector, applies migrations, runs both suites and builds both Docker targets. See [validation notes](docs/development/integration-validation.md) for actual results and environment limitations.
 
 ## Deployment
 
