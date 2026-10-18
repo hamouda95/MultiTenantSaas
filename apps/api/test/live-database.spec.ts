@@ -629,6 +629,231 @@ describe.skipIf(!live)("Real PostgreSQL API and RLS integration", () => {
       ).status,
     ).toBe(403);
   });
+  it("enforces cashier store scope, price authority, idempotent POS sales and financial redaction over HTTP", async () => {
+    const path = `/tenants/${tenantId}/business`;
+    let state = (await request(path, { cookie: ownerCookie })).body;
+    const companyId = state.state.companies[0].id;
+    const command = async (
+      action: any,
+      cookie = ownerCookie,
+      commandId = randomUUID(),
+      version = state.version,
+      pos = false,
+    ) => {
+      const r = await request(`${path}/${pos ? "pos/commands" : "commands"}`, {
+        method: "POST",
+        cookie,
+        body: { commandId, version, action: { companyId, ...action } },
+      });
+      if (r.status === 201 && cookie === ownerCookie && !pos) state = r.body;
+      return r;
+    };
+    await command({
+      type: "location.create",
+      name: "POS Tunis",
+      kind: "STORE",
+    });
+    const locationId = state.state.locations.at(-1).id;
+    await command({
+      type: "account.create",
+      name: "Till",
+      kind: "CASH",
+      opening: 100000,
+      asOf: "2026-01-01",
+    });
+    const cashAccountId = state.state.accounts.at(-1).id;
+    await command({
+      type: "account.create",
+      name: "Bank",
+      kind: "BANK",
+      opening: 0,
+      asOf: "2026-01-01",
+    });
+    const cardAccountId = state.state.accounts.at(-1).id;
+    await command({
+      type: "partner.create",
+      name: "Counter",
+      kind: "CUSTOMER",
+      email: "",
+    });
+    const customerId = state.state.partners.at(-1).id;
+    const productId = state.state.products[0].id;
+    await command({
+      type: "product.pricing",
+      productId,
+      salePrice: 1000,
+      barcode: "HTTP-SHOE",
+    });
+    await command({
+      type: "stock.adjust",
+      productId,
+      locationId,
+      quantity: 5,
+      unitCost: 500,
+      reason: "POS opening",
+    });
+    await command({
+      type: "pos.configure",
+      locationId,
+      cashAccountId,
+      cardAccountId,
+      customerId,
+      maxDiscountBps: 500,
+    });
+    const userId = (await request("/auth/me", { cookie: viewerCookie })).body
+      .profile.id;
+    expect(
+      (
+        await command({
+          type: "access.grant",
+          userId,
+          role: "CASHIER",
+          locationIds: [locationId],
+        })
+      ).status,
+    ).toBe(201);
+    const hidden = await request(path, { cookie: viewerCookie });
+    expect(hidden.body.state.companies).toHaveLength(0);
+    expect(hidden.body.state.accounts).toHaveLength(0);
+    const view = await request(`${path}/pos`, { cookie: viewerCookie });
+    expect(view.body.stores.map((x: any) => x.id)).toEqual([locationId]);
+    expect(view.body.products[0].cost).toBeUndefined();
+    expect(view.body.accounts).toBeUndefined();
+    const opened = await command(
+      { type: "pos.open", locationId, opening: 1000 },
+      viewerCookie,
+      randomUUID(),
+      state.version,
+      true,
+    );
+    expect(opened.status).toBe(201);
+    const sessionId = opened.body.sessions[0].id,
+      version = opened.body.version;
+    const action = {
+      type: "pos.checkout",
+      sessionId,
+      items: [{ productId, quantity: 1 }],
+      discountBps: 0,
+      cash: 1000,
+      card: 0,
+      cashGiven: 1000,
+    };
+    const commandId = randomUUID();
+    const sold = await command(action, viewerCookie, commandId, version, true);
+    expect(sold.status).toBe(201);
+    expect(sold.body.tickets).toHaveLength(1);
+    const replay = await command(
+      action,
+      viewerCookie,
+      commandId,
+      version,
+      true,
+    );
+    expect(replay.status).toBe(201);
+    expect(replay.body.tickets).toHaveLength(1);
+    const denied = await command(
+      { type: "product.pricing", productId, salePrice: 1, barcode: "" },
+      viewerCookie,
+      randomUUID(),
+      sold.body.version,
+      true,
+    );
+    expect(denied.status).toBe(403);
+    const close = await command(
+      {
+        type: "pos.close",
+        sessionId,
+        counted: 2000,
+        reason: "balanced closing",
+      },
+      viewerCookie,
+      randomUUID(),
+      sold.body.version,
+      true,
+    );
+    expect(close.status).toBe(201);
+    expect(close.body.sessions[0].variance).toBe(0);
+  });
+  it("authorizes complete exports and reversible holding lifecycle without destroying records", async () => {
+    const route = `/administration/holdings/${tenantId}`;
+    expect(
+      (
+        await request(`${route}/export`, {
+          method: "POST",
+          cookie: otherCookie,
+          body: {},
+        })
+      ).status,
+    ).toBe(403);
+    const exported = await request(`${route}/export`, {
+      method: "POST",
+      cookie: ownerCookie,
+      body: {},
+    });
+    expect(exported.status).toBe(201);
+    expect(exported.body.business.state.sales.length).toBeGreaterThan(0);
+    expect(exported.body.auth_sessions).toBeUndefined();
+    expect(JSON.stringify(exported.body.members)).not.toContain("password");
+    const list = await request("/administration/holdings", {
+      cookie: ownerCookie,
+    });
+    const holding = list.body.holdings.find((x: any) => x.id === tenantId);
+    const body = {
+      version: holding.version,
+      mode: "DELETED",
+      confirmation: holding.name,
+      reason: "test reversible deletion",
+    };
+    expect(
+      (
+        await request(`${route}/lifecycle`, {
+          method: "POST",
+          cookie: ownerCookie,
+          body: { ...body, confirmation: "wrong" },
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await request(`${route}/lifecycle`, {
+          method: "POST",
+          cookie: ownerCookie,
+          body,
+        })
+      ).status,
+    ).toBe(201);
+    expect(
+      (await request(`/tenants/${tenantId}/business`, { cookie: ownerCookie }))
+        .status,
+    ).toBe(403);
+    const archived = await request(`${route}/export`, {
+      method: "POST",
+      cookie: ownerCookie,
+      body: {},
+    });
+    expect(archived.status).toBe(201);
+    expect(archived.body.business.state.sales.length).toBe(
+      exported.body.business.state.sales.length,
+    );
+    expect(
+      (
+        await request(`${route}/lifecycle`, {
+          method: "POST",
+          cookie: ownerCookie,
+          body: {
+            ...body,
+            version: holding.version + 1,
+            mode: "ACTIVE",
+            reason: "restore test",
+          },
+        })
+      ).status,
+    ).toBe(201);
+    expect(
+      (await request(`/tenants/${tenantId}/business`, { cookie: ownerCookie }))
+        .status,
+    ).toBe(200);
+  });
   it("revokes logged-out sessions server-side", async () => {
     expect(
       (

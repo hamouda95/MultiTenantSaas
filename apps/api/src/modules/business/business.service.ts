@@ -1,3 +1,4 @@
+import { posSnapshot } from "./pos.engine";
 import {
   Injectable,
   Inject,
@@ -48,9 +49,36 @@ export class BusinessService {
       userId,
     };
   }
-  async execute(tenant: TenantContext, command: BusinessCommand) {
+  async pos(tenant: TenantContext) {
+    const { userId, owner } = this.identity(tenant);
+    const r = await this.db.queryInTenantContext(
+      tenant.tenantId,
+      "SELECT version,state FROM business_ledgers WHERE tenant_id=$1",
+      [tenant.tenantId],
+    );
+    return posSnapshot(
+      r.rows[0]?.state || emptyBusiness(),
+      Number(r.rows[0]?.version || 0),
+      userId,
+      owner,
+      tenant.membershipId,
+    );
+  }
+  async execute(
+    tenant: TenantContext,
+    command: BusinessCommand,
+    forPos = false,
+  ) {
     const { userId, owner } = this.identity(tenant);
     return this.db.runInTenantContext(tenant.tenantId, async (client) => {
+      const holding = await client.query(
+        "SELECT status FROM tenants WHERE id=$1 FOR SHARE",
+        [tenant.tenantId],
+      );
+      if (holding.rows[0]?.status !== "ACTIVE")
+        throw new ForbiddenException(
+          "Holding suspendue, archivée ou supprimée",
+        );
       await client.query(
         "INSERT INTO business_ledgers (tenant_id) VALUES ($1) ON CONFLICT DO NOTHING",
         [tenant.tenantId],
@@ -72,6 +100,14 @@ export class BusinessService {
           previous.rows[0].payload_hash !== fingerprint
         )
           throw new ConflictException("Identifiant de commande déjà utilisé");
+        if (forPos)
+          return posSnapshot(
+            rows[0].state,
+            Number(rows[0].version),
+            userId,
+            owner,
+            tenant.membershipId,
+          );
         return {
           version: Number(rows[0].version),
           state: visibleBusiness(
@@ -145,6 +181,14 @@ export class BusinessService {
           }),
         ],
       );
+      if (forPos)
+        return posSnapshot(
+          state,
+          Number(rows[0].version) + 1,
+          userId,
+          owner,
+          tenant.membershipId,
+        );
       return {
         version: Number(rows[0].version) + 1,
         state: visibleBusiness(state, userId, owner, tenant.membershipId),

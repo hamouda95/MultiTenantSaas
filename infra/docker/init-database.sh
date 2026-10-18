@@ -7,7 +7,7 @@ SELECT format('ALTER ROLE saas_app_user PASSWORD %L', :'app_password') \gexec
 CREATE ROLE saas_control LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE BYPASSRLS;
 SELECT format('ALTER ROLE saas_control PASSWORD %L', :'control_password') \gexec
 SQL
-for migration in /migrations/01*.sql /migrations/02*.sql /migrations/03*.sql /migrations/04*.sql /migrations/05*.sql; do
+for migration in /migrations/01*.sql /migrations/02*.sql /migrations/03*.sql /migrations/04*.sql /migrations/05*.sql /migrations/06*.sql; do
   psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f "$migration"
 done
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<'SQL'

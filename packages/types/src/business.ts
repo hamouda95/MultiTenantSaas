@@ -9,6 +9,7 @@ export interface BusinessCompany {
   coverDays: number;
   minimumStock: number;
   modules: string[];
+  status?: "ACTIVE" | "ARCHIVED" | "DELETED";
 }
 export interface BusinessLocation {
   id: string;
@@ -25,6 +26,8 @@ export interface BusinessProduct {
   size: string;
   color: string;
   cost: number;
+  salePrice?: number;
+  barcode?: string;
 }
 export interface BusinessAccount {
   id: string;
@@ -80,6 +83,7 @@ export interface BusinessInvoice {
   createdAt: string;
 }
 export interface BusinessPayment {
+  posSessionId?: string;
   id: string;
   companyId: string;
   invoiceId: string;
@@ -106,6 +110,7 @@ export interface BusinessSale {
   lines: BusinessLine[];
   unitCosts: Record<string, number>;
   cost: number;
+  posSessionId?: string;
   total: number;
   returned: boolean;
   date: string;
@@ -131,7 +136,14 @@ export interface BusinessAccess {
   membershipId?: string;
   companyId: string;
   userId: string;
-  role: "MANAGER" | "FINANCE" | "OPERATIONS" | "VIEWER";
+  role:
+    | "MANAGER"
+    | "FINANCE"
+    | "OPERATIONS"
+    | "VIEWER"
+    | "CASHIER"
+    | "STORE_MANAGER";
+  locationIds?: string[];
 }
 export interface BusinessEvent {
   id: string;
@@ -156,6 +168,16 @@ export interface BusinessState {
   cashTransfers: BusinessCashTransfer[];
   access: BusinessAccess[];
   events: BusinessEvent[];
+  posConfigs?: PosConfig[];
+  posSessions?: PosSession[];
+  cashAdjustments?: {
+    id: string;
+    companyId: string;
+    accountId: string;
+    amount: number;
+    reason: string;
+    date: string;
+  }[];
 }
 export interface BusinessSnapshot {
   version: number;
@@ -175,4 +197,72 @@ export interface ReplenishmentSuggestion {
   available: number;
   confidence: "LOW" | "MEDIUM";
   explanation: string;
+}
+
+export interface PosConfig {
+  id: string;
+  companyId: string;
+  locationId: string;
+  cashAccountId: string;
+  cardAccountId: string;
+  customerId: string;
+  maxDiscountBps: number;
+}
+export interface PosSession {
+  id: string;
+  companyId: string;
+  locationId: string;
+  userId: string;
+  cashAccountId: string;
+  opening: number;
+  openedAt: string;
+  closedAt?: string;
+  counted?: number;
+  expected?: number;
+  variance?: number;
+  reason?: string;
+  reconciledAt?: string;
+}
+export interface PosSnapshot {
+  version: number;
+  userId: string;
+  stores: {
+    id: string;
+    companyId: string;
+    name: string;
+    companyName: string;
+    currency: string;
+    canManage: boolean;
+    canReconcile: boolean;
+    configured: boolean;
+    maxDiscountBps: number;
+  }[];
+  products: {
+    id: string;
+    companyId: string;
+    sku: string;
+    name: string;
+    size: string;
+    color: string;
+    barcode: string;
+    price: number;
+  }[];
+  availability: {
+    productId: string;
+    locationId: string;
+    locationName: string;
+    quantity: number;
+  }[];
+  sessions: PosSession[];
+  tickets: {
+    id: string;
+    companyId: string;
+    locationId: string;
+    reference: string;
+    date: string;
+    total: number;
+    returned: boolean;
+    lines: BusinessLine[];
+    tenders: { method: "CASH" | "CARD"; amount: number }[];
+  }[];
 }

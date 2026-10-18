@@ -566,9 +566,12 @@ export default function BusinessPage() {
     : s.access.find(
         (a) => a.companyId === company?.id && a.userId === snapshot.userId,
       )?.role;
-  const manage = !!company && role === "MANAGER";
-  const finance = !!company && ["MANAGER", "FINANCE"].includes(role || "");
-  const operate = !!company && ["MANAGER", "OPERATIONS"].includes(role || "");
+  const active = !company?.status || company.status === "ACTIVE";
+  const manage = !!company && active && role === "MANAGER";
+  const finance =
+    !!company && active && ["MANAGER", "FINANCE"].includes(role || "");
+  const operate =
+    !!company && active && ["MANAGER", "OPERATIONS"].includes(role || "");
   const products = rows(s.products),
     locations = rows(s.locations),
     partners = rows(s.partners),
@@ -840,6 +843,13 @@ export default function BusinessPage() {
           </Panel>
         </>
       )}
+      {company && company.status && company.status !== "ACTIVE" && (
+        <p role="status" className="mb-4 text-sm text-danger">
+          Société{" "}
+          {company.status === "DELETED" ? "dans la corbeille" : "archivée"} :
+          lecture seule jusqu’à restauration.
+        </p>
+      )}
       {tab === "companies" && (
         <>
           {snapshot.holdingOwner && (
@@ -852,6 +862,40 @@ export default function BusinessPage() {
               run={run}
               busy={busy}
             />
+          )}
+          {company && snapshot.holdingOwner && (
+            <Form
+              title="Archiver, supprimer ou restaurer la société"
+              busy={busy}
+              button="Confirmer le changement d’état"
+              onSubmit={(d) =>
+                run(
+                  withCompany({
+                    type: "company.lifecycle",
+                    status: text(d, "status"),
+                    confirmation: text(d, "confirmation"),
+                  }),
+                )
+              }
+            >
+              <Select
+                name="status"
+                label="Nouvel état"
+                options={[
+                  { id: "ACTIVE", name: "Active / restaurer" },
+                  { id: "ARCHIVED", name: "Archiver" },
+                  { id: "DELETED", name: "Supprimer (corbeille restaurable)" },
+                ]}
+              />
+              <Text
+                name="confirmation"
+                label={`Saisir exactement : ${company.name}`}
+              />
+              <p className="text-xs text-muted">
+                La suppression place la société dans une corbeille restaurable.
+                Ses données restent présentes dans les exports.
+              </p>
+            </Form>
           )}
           <Panel title="Sociétés du holding">
             <Table
@@ -947,6 +991,37 @@ export default function BusinessPage() {
               <Text name="brand" label="Marque" required={false} />
               <Text name="size" label="Taille" required={false} />
               <Text name="color" label="Couleur" required={false} />
+            </Form>
+          )}
+          {manage && (
+            <Form
+              title="Tarif et code-barres pour la Caisse"
+              busy={busy}
+              onSubmit={(d) =>
+                formRun(() =>
+                  withCompany({
+                    type: "product.pricing",
+                    productId: text(d, "productId"),
+                    salePrice: amount(d.get("salePrice"), currency),
+                    barcode: text(d, "barcode"),
+                  }),
+                )
+              }
+            >
+              <Select
+                name="productId"
+                label="Variante à tarifer"
+                options={products.map((p) => ({
+                  id: p.id,
+                  name: productName(p.id),
+                }))}
+              />
+              <Text
+                name="salePrice"
+                label={`Prix de vente (${currency})`}
+                type="number"
+              />
+              <Text name="barcode" label="Code-barres" required={false} />
             </Form>
           )}
           <Panel title="Catalogue">
@@ -1800,6 +1875,7 @@ export default function BusinessPage() {
                     type: "access.grant",
                     userId: text(d, "userId"),
                     role: text(d, "role"),
+                    locationIds: d.getAll("locationIds").map(String),
                   }),
                 )
               }
@@ -1822,8 +1898,23 @@ export default function BusinessPage() {
                   { id: "FINANCE", name: "Finance" },
                   { id: "OPERATIONS", name: "Opérations" },
                   { id: "VIEWER", name: "Lecteur" },
+                  { id: "CASHIER", name: "Caissier (magasins limités)" },
+                  { id: "STORE_MANAGER", name: "Responsable magasin" },
                 ]}
               />
+              <div className="space-y-2">
+                <p className="text-sm font-medium">
+                  Magasins autorisés (Caisse)
+                </p>
+                {locations
+                  .filter((l) => l.kind === "STORE")
+                  .map((l) => (
+                    <label key={l.id} className="flex gap-2 text-sm">
+                      <input type="checkbox" name="locationIds" value={l.id} />
+                      {l.name}
+                    </label>
+                  ))}
+              </div>
             </Form>
           )}
           <Table
@@ -1851,6 +1942,51 @@ export default function BusinessPage() {
             ])}
           />
         </Panel>
+      )}
+      {company && manage && (
+        <Form
+          title="Configurer la Caisse du magasin"
+          busy={busy}
+          onSubmit={(d) =>
+            run(
+              withCompany({
+                type: "pos.configure",
+                locationId: text(d, "locationId"),
+                cashAccountId: text(d, "cashAccountId"),
+                cardAccountId: text(d, "cardAccountId"),
+                customerId: text(d, "customerId"),
+                maxDiscountBps: Math.round(Number(d.get("discount")) * 100),
+              }),
+            )
+          }
+        >
+          <Select
+            name="locationId"
+            label="Magasin à configurer"
+            options={locations.filter((l) => l.kind === "STORE")}
+          />
+          <Select
+            name="cashAccountId"
+            label="Compte de caisse"
+            options={accounts.filter((a) => a.kind === "CASH")}
+          />
+          <Select
+            name="cardAccountId"
+            label="Compte des règlements carte"
+            options={accounts.filter((a) => a.kind === "BANK")}
+          />
+          <Select
+            name="customerId"
+            label="Client comptoir"
+            options={partners.filter((p) => p.kind === "CUSTOMER")}
+          />
+          <Text
+            name="discount"
+            label="Remise maximale caissier (%)"
+            type="number"
+            value="0"
+          />
+        </Form>
       )}
       <p className="mt-6 text-xs text-muted">
         Pilote métier : opérations manuelles, réception complète et transferts

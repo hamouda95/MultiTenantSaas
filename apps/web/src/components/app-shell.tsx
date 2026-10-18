@@ -31,6 +31,7 @@ import { useTenantSettings } from "@/components/tenant-theme";
 import { CreateWorkspaceDialog } from "@/components/create-workspace-dialog";
 
 const NAV = [
+  { href: "/pos", label: "Caisse", icon: LayoutDashboard },
   { href: "/business", label: "Gestion du holding", icon: LayoutDashboard },
   { href: "/platform", label: "Administration SaaS", icon: Puzzle },
   { href: "/members", label: "Membres", icon: Users },
@@ -263,6 +264,9 @@ export function AppShell({
         name={name}
         logoUrl={settings?.settings.logoUrl}
       />
+      <Link href="/administration" className="text-sm text-accent">
+        Administration des holdings
+      </Link>
       <nav aria-label="Navigation principale" className="flex-1 space-y-1">
         {NAV.map(({ href, label, icon: Icon }) => {
           const full = `${base}${href}`;

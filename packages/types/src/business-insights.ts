@@ -25,6 +25,9 @@ export function productStock(
 export function accountBalance(s: BusinessState, id: string) {
   return (
     (s.accounts.find((a) => a.id === id)?.opening || 0) +
+    (s.cashAdjustments || [])
+      .filter((x) => x.accountId === id)
+      .reduce((n, x) => n + x.amount, 0) +
     s.payments
       .filter((p) => p.accountId === id)
       .reduce(

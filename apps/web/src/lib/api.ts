@@ -84,6 +84,43 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
 const t = (id: string) => `/api/v1/tenants/${encodeURIComponent(id)}`;
 
 export const api = {
+  administration: () =>
+    request<{
+      platformAdmin: boolean;
+      holdings: {
+        id: string;
+        name: string;
+        slug: string;
+        status: string;
+        mode: string;
+        version: number;
+        reason: string;
+      }[];
+    }>("/api/v1/administration/holdings"),
+  holdingLifecycle: (id: string, body: unknown) =>
+    request(`/api/v1/administration/holdings/${id}/lifecycle`, {
+      method: "POST",
+      body,
+    }),
+  exportHolding: (id: string) =>
+    request<Record<string, unknown>>(
+      `/api/v1/administration/holdings/${id}/export`,
+      { method: "POST", body: {} },
+    ),
+  pos: (id: string) =>
+    request<import("@saas/types").PosSnapshot>(`${t(id)}/business/pos`, {
+      tenantId: id,
+    }),
+  posCommand: (
+    id: string,
+    version: number,
+    action: unknown,
+    commandId: string,
+  ) =>
+    request<import("@saas/types").PosSnapshot>(
+      `${t(id)}/business/pos/commands`,
+      { method: "POST", tenantId: id, body: { version, action, commandId } },
+    ),
   business: (id: string) =>
     request<import("@saas/types").BusinessSnapshot>(`${t(id)}/business`, {
       tenantId: id,

@@ -74,3 +74,9 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+@media print {
+  body:has(#pos-ticket) * { visibility: hidden; }
+  #pos-ticket, #pos-ticket * { visibility: visible !important; }
+  #pos-ticket { position: absolute; top: 0; left: 0; width: 78mm; color: black; background: white; }
+}

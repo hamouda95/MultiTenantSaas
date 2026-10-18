@@ -51,6 +51,94 @@ export const BusinessCommandSchema = z
       z.object({ type: z.literal("company.create"), data: company }).strict(),
       z
         .object({
+          type: z.literal("company.lifecycle"),
+          companyId: id,
+          status: z.enum(["ACTIVE", "ARCHIVED", "DELETED"]),
+          confirmation: text,
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("product.pricing"),
+          companyId: id,
+          productId: id,
+          salePrice: positive,
+          barcode: z.string().trim().max(80),
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("pos.configure"),
+          companyId: id,
+          locationId: id,
+          cashAccountId: id,
+          cardAccountId: id,
+          customerId: id,
+          maxDiscountBps: z.number().int().min(0).max(10000),
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("pos.open"),
+          companyId: id,
+          locationId: id,
+          opening: money,
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("pos.checkout"),
+          companyId: id,
+          sessionId: id,
+          items: z
+            .array(
+              z
+                .object({
+                  productId: id,
+                  quantity: z.number().int().min(1).max(10000),
+                })
+                .strict(),
+            )
+            .min(1)
+            .max(100)
+            .refine(
+              (v) => new Set(v.map((l) => l.productId)).size === v.length,
+            ),
+          discountBps: z.number().int().min(0).max(10000),
+          cash: money,
+          card: money,
+          cashGiven: money,
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("pos.close"),
+          companyId: id,
+          sessionId: id,
+          counted: money,
+          reason: text,
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("pos.reconcile"),
+          companyId: id,
+          sessionId: id,
+          reason: text,
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("pos.refund"),
+          companyId: id,
+          sessionId: id,
+          saleId: id,
+          reason: text,
+        })
+        .strict(),
+
+      z
+        .object({
           type: z.literal("company.configure"),
           companyId: id,
           data: company,
@@ -61,7 +149,15 @@ export const BusinessCommandSchema = z
           type: z.literal("access.grant"),
           companyId: id,
           userId: id,
-          role: z.enum(["MANAGER", "FINANCE", "OPERATIONS", "VIEWER"]),
+          role: z.enum([
+            "MANAGER",
+            "FINANCE",
+            "OPERATIONS",
+            "VIEWER",
+            "CASHIER",
+            "STORE_MANAGER",
+          ]),
+          locationIds: z.array(id).max(100).optional(),
         })
         .strict(),
       z

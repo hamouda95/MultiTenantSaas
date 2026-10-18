@@ -50,6 +50,13 @@ export class RlsPostgresService implements OnModuleInit, OnModuleDestroy {
       this.inMemoryMode = true;
       return;
     }
+    if (
+      process.env.NODE_ENV === "production" &&
+      (!process.env.DATABASE_URL || !process.env.DATABASE_MIGRATION_URL)
+    )
+      throw new Error(
+        "Production requires independent runtime and control database URLs",
+      );
     const appDatabaseUrl =
       process.env.DATABASE_URL ||
       "postgresql://saas_app_user:app_secure_password_123@localhost:5432/saas_production?schema=public";
@@ -77,10 +84,28 @@ export class RlsPostgresService implements OnModuleInit, OnModuleDestroy {
       const client = await this.appPool.connect();
       try {
         const role = await client.query(
-          "SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user",
+          "SELECT current_user AS runtime_role, rolsuper, rolbypassrls, rolcreaterole, rolcreatedb, EXISTS(SELECT 1 FROM pg_roles elevated WHERE elevated.rolname IN ('saas_control','neon_superuser') AND pg_has_role(current_user,elevated.oid,'MEMBER')) AS privileged_membership FROM pg_roles WHERE rolname = current_user",
         );
-        if (role.rows[0]?.rolsuper || role.rows[0]?.rolbypassrls)
+        if (
+          role.rows[0]?.rolsuper ||
+          role.rows[0]?.rolbypassrls ||
+          role.rows[0]?.rolcreaterole ||
+          role.rows[0]?.rolcreatedb ||
+          role.rows[0]?.privileged_membership ||
+          !(
+            process.env.DATABASE_RUNTIME_ROLE
+              ? [process.env.DATABASE_RUNTIME_ROLE]
+              : ["saas_app_user", "saas_runtime"]
+          ).includes(role.rows[0]?.runtime_role)
+        )
           throw new Error("Application database role must enforce RLS");
+        const control = await this.adminPool.query(
+          "SELECT current_user AS control_role",
+        );
+        if (control.rows[0]?.control_role === role.rows[0]?.runtime_role)
+          throw new Error(
+            "Runtime and control connections must use different SQL roles",
+          );
       } finally {
         client.release();
       }
@@ -96,12 +121,31 @@ export class RlsPostgresService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  async assertReadiness() {
+    if (this.inMemoryMode) return;
+    if (!this.appPool || !this.adminPool)
+      throw new Error("Database not initialized");
+    const r = await this.appPool.query(
+      "SELECT relname,relrowsecurity,relforcerowsecurity FROM pg_class WHERE oid IN (to_regclass('tenant_settings'),to_regclass('business_ledgers'))",
+    );
+    if (
+      r.rows.length !== 2 ||
+      r.rows.some((x) => !x.relrowsecurity || !x.relforcerowsecurity)
+    )
+      throw new Error("Required migrations or RLS missing");
+    const data = await this.appPool.query(
+      "SELECT tenant_id FROM business_ledgers LIMIT 1",
+    );
+    if (data.rows.length)
+      throw new Error("Runtime role leaked tenant rows without context");
+    await this.adminPool.query("SELECT id FROM auth_sessions LIMIT 0");
+  }
+
   async runAdminTransaction<T>(
     callback: (client: PoolClient) => Promise<T>,
   ): Promise<T> {
     if (this.inMemoryMode)
       return this.executeInMemoryTenantTransaction(null as any, callback);
-    if (!this.adminPool) throw new Error("Database not initialized");
     if (!this.adminPool) throw new Error("Database not initialized");
     const client = await this.adminPool.connect();
     try {

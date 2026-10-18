@@ -1,3 +1,4 @@
+import { applyPos } from "./pos.engine";
 import { randomUUID } from "node:crypto";
 import {
   BadRequestException,
@@ -59,6 +60,9 @@ export function balance(s: BusinessState, accountId: string) {
   if (!account) throw new NotFoundException("Compte introuvable");
   return safe(
     account.opening +
+      (s.cashAdjustments || [])
+        .filter((x) => x.accountId === accountId)
+        .reduce((n, x) => n + x.amount, 0) +
       s.payments
         .filter((p) => p.accountId === accountId)
         .reduce(
@@ -109,6 +113,7 @@ export function visibleBusiness(
       .filter(
         (g) =>
           g.userId === userId &&
+          !["CASHIER", "STORE_MANAGER"].includes(g.role) &&
           (!membershipId || g.membershipId === membershipId),
       )
       .map((g) => g.companyId),
@@ -162,7 +167,54 @@ export function applyBusiness(
   const companyId = a.companyId;
   const company = s.companies.find((c) => c.id === companyId);
   if (!company) throw new NotFoundException("Société introuvable");
+  if (a.type === "company.lifecycle") {
+    if (!owner) throw new ForbiddenException("Propriétaire du holding requis");
+    if (a.confirmation !== company.name) fail("Nom de confirmation incorrect");
+    if (
+      a.status !== "ACTIVE" &&
+      s.posSessions?.some((p) => p.companyId === companyId && !p.closedAt)
+    )
+      fail("Fermez les caisses avant cette action");
+    company.status = a.status;
+    s.events.push({
+      id: randomUUID(),
+      companyId,
+      action: a.type,
+      actorId: userId,
+      date: now,
+      reference: a.status,
+    });
+    return s;
+  }
+  if (company.status && company.status !== "ACTIVE")
+    fail("Restaurez la société avant modification");
+  if (a.type.startsWith("pos."))
+    return applyPos(
+      s,
+      a as Extract<BusinessAction, { type: `pos.${string}` }>,
+      userId,
+      owner,
+      now,
+      membershipId,
+    );
   const role = companyRole(s, companyId, userId, owner, membershipId);
+  if (role === "CASHIER" || role === "STORE_MANAGER")
+    throw new ForbiddenException("Utilisez uniquement la Caisse autorisée");
+  if (a.type === "product.pricing" && role !== "MANAGER")
+    throw new ForbiddenException("Responsable requis pour les tarifs");
+  const openCash = new Set(
+    (s.posSessions || [])
+      .filter((p) => !p.closedAt)
+      .map((p) => p.cashAccountId),
+  );
+  if (
+    ((a.type === "payment.create" || a.type === "expense.create") &&
+      openCash.has(a.accountId)) ||
+    (a.type === "cash.transfer" &&
+      (openCash.has(a.fromId) || openCash.has(a.toId)))
+  )
+    fail("Fermez la caisse avant une opération financière externe");
+
   if (!role || role === "VIEWER")
     throw new ForbiddenException(
       "Accès en lecture seule ou société non autorisée",
@@ -283,6 +335,22 @@ export function applyBusiness(
       Object.assign(company, a.data);
       break;
     }
+    case "product.pricing": {
+      const product = own(s.products, a.productId);
+      if (
+        a.barcode &&
+        s.products.some(
+          (p) =>
+            p.companyId === companyId &&
+            p.id !== product.id &&
+            p.barcode === a.barcode,
+        )
+      )
+        fail("Code-barres déjà utilisé");
+      product.salePrice = a.salePrice;
+      product.barcode = a.barcode;
+      break;
+    }
     case "access.grant":
     case "access.revoke": {
       if (!owner)
@@ -292,8 +360,21 @@ export function applyBusiness(
       s.access = s.access.filter(
         (g) => !(g.companyId === companyId && g.userId === a.userId),
       );
-      if (a.type === "access.grant")
-        s.access.push({ companyId, userId: a.userId, role: a.role });
+      if (a.type === "access.grant") {
+        if (
+          ["CASHIER", "STORE_MANAGER"].includes(a.role) &&
+          !a.locationIds?.length
+        )
+          fail("Attribuez au moins un magasin");
+        for (const id of a.locationIds || [])
+          if (own(s.locations, id).kind !== "STORE") fail("Magasin requis");
+        s.access.push({
+          companyId,
+          userId: a.userId,
+          role: a.role,
+          locationIds: a.locationIds || [],
+        });
+      }
       break;
     }
     case "location.create":

@@ -1,3 +1,4 @@
+import { AdministrationModule } from "./modules/administration/administration.module";
 import { BusinessModule } from "./modules/business/business.module";
 import { Module, MiddlewareConsumer, NestModule } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
@@ -20,6 +21,7 @@ import { Request, Response, NextFunction } from "express";
     }),
     DatabaseModule,
     BusinessModule,
+    AdministrationModule,
     IdentityModule,
     TenantsModule,
     SettingsModule,

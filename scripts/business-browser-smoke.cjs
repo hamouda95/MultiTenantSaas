@@ -235,6 +235,87 @@ let failurePage;
       .reduce((n, m) => n + m.quantity, 0),
     95,
   );
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await cmd({
+    type: "account.create",
+    name: "POS Till",
+    kind: "CASH",
+    opening: 0,
+    asOf: new Date().toISOString().slice(0, 10),
+  });
+  const cashAccountId = snap.state.accounts.at(-1).id;
+  await cmd({
+    type: "product.pricing",
+    productId,
+    salePrice: 2000,
+    barcode: "POS-42",
+  });
+  await cmd({
+    type: "pos.configure",
+    locationId: storeId,
+    cashAccountId,
+    cardAccountId: snap.state.accounts[0].id,
+    customerId: snap.state.partners[1].id,
+    maxDiscountBps: 0,
+  });
+  await page.goto(`/t/${tenantId}/pos`);
+  await page.getByRole("heading", { name: "Caisse", exact: true }).waitFor();
+  await page.getByLabel("Fond de caisse", { exact: true }).fill("0");
+  await page
+    .getByRole("button", { name: "Ouvrir la session", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Ajouter", exact: true }).click();
+  await page
+    .getByRole("button", {
+      name: "Valider la vente et le règlement",
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("button", { name: "Voir le ticket", exact: true })
+    .waitFor();
+  await page
+    .getByRole("button", { name: "Voir le ticket", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Imprimer le ticket", exact: true })
+    .waitFor();
+  await page.screenshot({
+    path: "test-results/pos-desktop.png",
+    fullPage: true,
+  });
+  await page.getByLabel("Espèces comptées", { exact: true }).fill("2");
+  await page
+    .getByLabel("Commentaire de clôture", { exact: true })
+    .fill("Balanced browser closing");
+  await page
+    .getByRole("button", { name: "Clôturer la Caisse", exact: true })
+    .click();
+  await page.getByText("Rapprochée", { exact: false }).waitFor();
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth > innerWidth,
+    ),
+    false,
+  );
+  await page.screenshot({
+    path: "test-results/pos-mobile.png",
+    fullPage: true,
+  });
+  await page.goto("/administration");
+  await page
+    .getByRole("heading", { name: "Administration des holdings", exact: true })
+    .waitFor();
+  const downloadPromise = page.waitForEvent("download");
+  await page
+    .getByRole("button", {
+      name: "Exporter toutes les données métier",
+      exact: true,
+    })
+    .click();
+  const download = await downloadPromise;
+  assert(download.suggestedFilename().endsWith(".json"));
   assert.deepEqual(errors, []);
   await browser.close();
   console.log(

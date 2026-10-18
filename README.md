@@ -53,7 +53,7 @@ pnpm test
 pnpm --filter @saas/api test:integration
 ```
 
-The default suite has 42 tests using domain rules/mocks/the legacy test-only SQL emulator, plus eight explicitly skipped live database tests. Only the separate live suite validates actual PostgreSQL policies and HTTP lifecycle behavior. CI provisions pgvector, applies migrations, runs both suites and builds both Docker targets. See [validation notes](docs/development/integration-validation.md) for actual results and environment limitations.
+The default suite has 49 tests using domain rules/mocks/the legacy test-only SQL emulator, plus ten explicitly skipped live database tests. Only the separate live suite validates actual PostgreSQL policies and HTTP lifecycle behavior. CI provisions pgvector, applies migrations, runs both suites and builds both Docker targets. See [validation notes](docs/development/integration-validation.md) for actual results and environment limitations.
 
 ## Deployment
 
@@ -78,3 +78,9 @@ AI chat execution, RAG ingestion, prediction, agents, NL-to-SQL, file storage an
 ## Documentation administrateur en français
 
 Consultez le [guide administrateur](docs/fr/guide-administrateur.md) : accès par holding/société, limites actuelles, exports, suppression/archivage à développer et spécification de la future interface Caisse.
+
+## Administration, Caisse et revue Neon/Render
+
+La branche `feat/admin-pos-render-review` ajoute l’administration des holdings (suspension, archivage, corbeille/restauration), l’export métier JSON complet, les rôles Caisse par magasin, tarifs/codes-barres, ventes/règlements atomiques, tickets internes, clôtures et validation des écarts. Consulter le [guide français](docs/fr/guide-administrateur.md) et le [rapport réel Neon/Render](docs/development/neon-render-review.md).
+
+Le dépôt contient désormais un Blueprint Render et une cible Docker combinée frontend/API. Le service Render existant déploie seulement l’API ; ces fichiers ne modifient pas automatiquement le service ni les données Neon.

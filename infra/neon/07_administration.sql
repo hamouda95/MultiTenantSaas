@@ -1,0 +1,6 @@
+BEGIN;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS lifecycle_mode text NOT NULL DEFAULT 'ACTIVE';
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS lifecycle_version integer NOT NULL DEFAULT 0;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS lifecycle_reason text NOT NULL DEFAULT '';
+UPDATE tenants SET lifecycle_mode=CASE status WHEN 'DECOMMISSIONED' THEN 'DELETED' ELSE 'SUSPENDED' END WHERE status<>'ACTIVE' AND lifecycle_mode='ACTIVE';
+COMMIT;

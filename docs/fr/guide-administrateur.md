@@ -1,179 +1,101 @@
-# Guide administrateur — holdings, accès, exports et Caisse
+# Administration, accès et Caisse — guide utilisateur
 
-Version du 18 octobre 2026. Ce guide décrit le pilote présent dans la branche `feat/claude-frontend-integration`. Les fonctions indiquées « À développer » ne sont pas encore disponibles. Elles constituent la cible du produit, pas des boutons déjà livrés.
+Version correspondant à la branche `feat/admin-pos-render-review`. Les changements doivent être déployés avant d’apparaître dans votre installation. Le [rapport de revue et de déploiement](../development/neon-render-review.md) donne les observations réelles sur Neon et Render.
 
-## 1. Comprendre les niveaux
+## Administrer les holdings
 
-| Niveau                   | Exemple                                         | Responsabilité                                       |
-| ------------------------ | ----------------------------------------------- | ---------------------------------------------------- |
-| Éditeur de la plateforme | Vous, fournisseur du SaaS                       | Administrer les clients et l’exploitation du service |
-| Holding cliente          | Ben Makhlouf                                    | Superviser ses sociétés et leurs utilisateurs        |
-| Société                  | Polaris                                         | Gérer ses achats, stocks, ventes et trésorerie       |
-| Marque                   | Une marque de chaussures distribuée par Polaris | Identifier les produits et configurer l’activité     |
-| Emplacement              | Entrepôt central, magasin Tunis, magasin Sousse | Identifier où se trouve le stock                     |
+Ouvrir **Administration** depuis la liste des organisations, ou **Administration des holdings** dans la barre latérale. Un propriétaire voit ses holdings ; un administrateur plateforme voit tous les clients. Créer un compte ne donne pas automatiquement le rôle administrateur plateforme.
 
-Un espace de travail représente actuellement une holding. Une société appartient à une holding et ses produits, comptes, partenaires et opérations lui appartiennent. Une même personne peut être membre de plusieurs holdings.
+| Action    | Effet                                                            |
+| --------- | ---------------------------------------------------------------- |
+| Active    | Autorise les opérations et restaure un holding bloqué            |
+| Suspendue | Bloque les accès métier, sans effacer les données                |
+| Archivée  | Bloque les accès métier et marque la fermeture de l’activité     |
+| Corbeille | Suppression logique restaurable ; les données restent conservées |
 
-Le propriétaire d’une holding n’est pas automatiquement administrateur de toute la plateforme. Le premier compte créé ne devient pas automatiquement super-administrateur.
+Pour changer l’état, sélectionner la nouvelle valeur, saisir exactement le nom du holding et renseigner un motif. Une caisse ouverte bloque la fermeture du holding : clôturer d’abord les sessions. Un utilisateur dont le holding est bloqué ne peut plus consulter ni modifier ses données métier. Le propriétaire ou l’administrateur peut toujours exporter et restaurer depuis la console.
 
-## 2. Ce qui est disponible aujourd’hui
+La suppression n’est **pas une purge définitive**. Aucune donnée existante n’est effacée par le fait de déployer cette fonction. Une purge conforme à une politique de conservation nécessite une future procédure distincte.
 
-| Besoin                                                          | État réel                                                                                           |
-| --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Créer une holding                                               | Disponible : nouvelle organisation / espace de travail                                              |
-| Créer une société et ses marques                                | Disponible : Gestion du holding → Sociétés & configuration                                          |
-| Ajouter entrepôts et magasins                                   | Disponible : sélectionner la société → Catalogue & réseau                                           |
-| Inviter ou retirer un membre                                    | Disponible : Membres                                                                                |
-| Attribuer un rôle par société                                   | Disponible : Gestion du holding → Accès sociétés                                                    |
-| Retirer l’accès à une société                                   | Disponible : Accès sociétés → Révoquer                                                              |
-| Activer des fonctions par société                               | Disponible : configuration de la société                                                            |
-| Voir le stock dans les différents magasins                      | Disponible : Stocks & transferts, pour les personnes autorisées à la société entière                |
-| Saisir une vente                                                | Disponible : Ventes ; ce n’est pas encore une interface Caisse dédiée                               |
-| Exporter la synthèse financière                                 | Disponible : bouton Exporter → CSV du périmètre affiché                                             |
-| Exporter toutes les données métier et pièces jointes            | À développer ; le CSV actuel n’est pas un export complet                                            |
-| Suspendre, archiver ou supprimer une holding depuis l’interface | À développer                                                                                        |
-| Archiver ou supprimer une société depuis l’interface            | À développer                                                                                        |
-| Administrer tous les clients depuis une console éditeur         | À développer ; un rôle technique de plateforme existe, sans console complète de gestion des clients |
-| Limiter un utilisateur à un magasin ou masquer les finances     | À développer ; les rôles actuels portent sur la société entière                                     |
-| Utiliser une vraie Caisse avec tickets et clôture               | À développer                                                                                        |
+## Gérer les sociétés
 
-## 3. Donner des accès : procédure actuelle
+Dans **Gestion du holding → Sociétés & configuration**, sélectionner une société. Le propriétaire peut l’archiver, la placer dans la corbeille ou la restaurer, après confirmation exacte de son nom. L’historique, les produits, comptes et mouvements sont conservés. Les opérations sont bloquées tant que la société est inactive ; les autres sociétés continuent à fonctionner. Les sessions de caisse doivent être fermées avant archivage/suppression.
 
-### Ajouter un collaborateur à une holding
+## Inviter et attribuer des droits
 
-1. Ouvrir la bonne organisation dans le sélecteur de la barre latérale.
-2. Ouvrir **Membres**.
-3. Inviter son adresse email avec le rôle d’espace adapté.
-4. Copier le lien d’invitation et le transmettre à la personne. L’envoi automatique par email n’est pas configuré.
-5. La personne utilise cette même adresse, se connecte et accepte l’invitation.
-6. Pour un utilisateur qui n’est pas propriétaire du holding, attribuer ensuite les sociétés autorisées dans **Accès sociétés**.
+1. Dans **Membres**, inviter l’adresse email du collaborateur et transmettre le lien privé. L’envoi automatique d’email n’est pas configuré.
+2. Le collaborateur accepte avec la même adresse.
+3. Dans **Gestion du holding**, sélectionner la société puis **Accès sociétés**.
+4. Choisir le membre actif, son rôle et, pour les rôles Caisse, les magasins autorisés.
 
-Une invitation non acceptée ne donne pas accès aux données. Une simple adhésion à la holding ne donne pas accès aux sociétés pour un non-propriétaire.
+| Rôle société        | Droits                                                                                                                                                           |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Responsable         | Société entière : configuration, achats, approbations, stocks, ventes, finances, tarifs et rapprochement des écarts de caisse                                    |
+| Finance             | Société entière en lecture ; opérations de trésorerie et partenaires                                                                                             |
+| Opérations          | Société entière en lecture ; produits, achats, avancement des commandes approuvées, transferts et ventes, sans paiements                                         |
+| Lecteur             | Consultation de la société entière                                                                                                                               |
+| Caissier            | Interface Caisse des magasins attribués ; tarifs autorisés, ventes et sa propre session ; aucune donnée bancaire ni coût d’achat transmis                        |
+| Responsable magasin | Caisse des magasins attribués, sessions/tickets du magasin, remises et remboursements ; pas de configuration bancaire ni validation finale des écarts comptables |
 
-### Choisir le rôle dans la holding
+Un Owner de la holding voit toutes ses sociétés. Une attribution Caissier ne peut pas restreindre un Owner : ne pas attribuer ce rôle d’espace à un caissier. Les rôles d’espace Member/Viewer et les rôles société sont distincts ; les permissions de l’espace continuent à gouverner les fonctions communes comme l’annuaire.
 
-| Rôle d’espace | Usage                                                                                                   |
-| ------------- | ------------------------------------------------------------------------------------------------------- |
-| Owner         | Propriétaire de la holding : voit et administre toutes ses sociétés, gère les membres et les accès      |
-| Member        | Collaborateur de l’espace ; ses accès métier dépendent des attributions par société                     |
-| Viewer        | Accès limité aux fonctions de l’espace ; ses droits métier dépendent aussi des attributions par société |
+**Révoquer** retire l’attribution à une société. Retirer un membre dans **Membres** retire son adhésion à la holding, sans supprimer son compte ni ses autres adhésions. Une nouvelle invitation ne réactive pas ses anciennes attributions. Le dernier Owner ne peut pas être retiré.
 
-Les rôles d’espace et de société sont deux niveaux distincts. Par exemple, attribuer « Responsable » sur Polaris à un membre « Viewer » lui donne bien les pouvoirs métier de Responsable sur Polaris. Le rôle d’espace Viewer ne constitue donc pas une limite absolue à ses droits métier.
+## Exporter toutes les données métier
 
-Le système interdit de retirer ou rétrograder le dernier Owner de la holding.
+Dans **Administration des holdings**, cliquer **Exporter toutes les données métier**. Le JSON contient le holding, les sociétés (y compris archives/corbeille), catalogue, achats, ventes, stocks, comptes, factures, règlements, caisses, configurations, membres, rôles et historique d’audit. Il est autorisé côté serveur et journalisé.
 
-### Attribuer un rôle dans une société
+Les mots de passe, jetons d’invitation, sessions d’authentification et secrets techniques sont exclus. Aucun fichier joint n’est inclus : son stockage n’est pas implémenté. Cet export ne remplace pas une sauvegarde PostgreSQL ni une restauration testée. La synthèse CSV reste disponible dans **Vue holding → Exporter**.
 
-1. Ouvrir **Gestion du holding**.
-2. Sélectionner **Polaris** dans le périmètre en haut.
-3. Ouvrir **Accès sociétés**.
-4. Choisir un membre actif et son rôle.
-5. Enregistrer. Répéter pour les autres sociétés autorisées.
+## Préparer la Caisse d’un magasin
 
-| Rôle société            | Pouvoirs principaux                                                                                                                  | Visibilité       |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------- |
-| Responsable / MANAGER   | Configurer la société, approuver les achats, gérer les opérations et la trésorerie                                                   | Toute la société |
-| Finance / FINANCE       | Créer les partenaires, comptes, factures, règlements, dépenses et transferts de trésorerie                                           | Toute la société |
-| Opérations / OPERATIONS | Produits, partenaires, achats, avancement des commandes approuvées, transferts et ventes ; pas d’approbation initiale ni de paiement | Toute la société |
-| Lecteur / VIEWER        | Consulter sans modifier                                                                                                              | Toute la société |
+Le responsable société doit :
 
-Les restrictions sont vérifiées par le serveur. Masquer un bouton n’est pas la seule protection.
+1. Créer le magasin et ses variantes produit dans **Catalogue & réseau**.
+2. Définir le **tarif et code-barres** de chaque variante. Le caissier ne choisit pas librement le prix.
+3. Créer un compte de type Caisse, un compte pour enregistrer les règlements carte et un client comptoir.
+4. Renseigner **Configurer la Caisse du magasin** : magasin, comptes, client et remise maximale caissier.
+5. Attribuer les utilisateurs et magasins dans **Accès sociétés**.
+6. Enregistrer le stock réel disponible et un solde de caisse cohérent avec les fonds existants.
 
-**Limite importante : ces rôles ne masquent pas les finances ou les autres magasins de la société.** Ne pas utiliser le rôle Opérations comme rôle de caissier restreint. Un rôle Caisse avec accès par magasin doit être développé avant cet usage.
+Une caisse ne peut pas être partagée par deux sessions actives. Le fond d’ouverture fait partie du solde existant ; l’ouverture ne crée pas d’argent fictif. Les écritures de trésorerie extérieures à la session sont bloquées sur une caisse ouverte.
 
-### Retirer des accès
+## Vendre
 
-- Pour une société seulement : sélectionner cette société → **Accès sociétés → Révoquer**.
-- Pour la holding entière : **Membres → retirer le membre**. Cela retire son adhésion à cette holding, sans supprimer son compte utilisateur ni ses adhésions aux autres holdings.
-- Retirer une attribution de société ne limite pas un Owner : son rôle de propriétaire lui donne accès à toutes les sociétés de la holding.
-- Après retrait puis nouvelle invitation, les anciennes attributions de société ne redeviennent pas valides automatiquement. Les réattribuer explicitement.
+1. Ouvrir **Caisse** et sélectionner le magasin autorisé.
+2. Ouvrir la session avec le fond de caisse.
+3. Scanner le code-barres et appuyer sur Entrée, ou chercher le produit puis cliquer **Ajouter**.
+4. Ajuster le panier ; les remises sont limitées côté serveur.
+5. Renseigner la part carte ; le reste est dû en espèces. Indiquer les espèces remises pour calculer la monnaie.
+6. **Valider la vente et le règlement** enregistre ensemble vente, sortie de stock, créance et encaissements. Les nouvelles tentatives d’une même commande ne doublent pas la vente.
+7. Ouvrir le ticket, puis l’imprimer si nécessaire.
 
-## 4. Configurer une société
+Les cartes sont **enregistrées après un paiement externe** : le logiciel ne déclenche pas de transaction sur un terminal bancaire. Les tickets sont internes, non fiscaux et non certifiés. Le mode hors ligne, les taxes détaillées et les périphériques spécialisés ne sont pas intégrés. Un lecteur qui saisit un code comme un clavier peut utiliser le champ de recherche.
 
-Dans **Sociétés & configuration**, définir le nom, pays, devise, marques, délai de réapprovisionnement, couverture souhaitée, minimum de stock et fonctions activées. Vérifier le récapitulatif avant confirmation.
+## Consulter les disponibilités ailleurs
 
-La devise est fixe après création. Les fonctions désactivées ne sont pas supprimées : les données historiques restent consultables et les nouvelles opérations correspondantes sont bloquées. Désactiver un module n’archive pas une société et ne remplace pas la révocation des accès.
+Sous chaque variante, ouvrir **Stock dans les autres emplacements**. Les stocks physiques des magasins et entrepôts de la même société sont consultables. Les autres sociétés restent exclues du compte caissier.
 
-## 5. Supprimer ou archiver : fonctionnement à prévoir
+Ce stock ne tient pas compte de réservations ni de marchandises en transit : ces workflows restent à développer. La consultation ne réserve pas un article et ne crée pas de transfert. Le responsable utilise les transferts existants lorsque nécessaire.
 
-Il n’existe actuellement ni bouton ni API de suppression de holding/société. Ne pas supprimer des lignes directement dans la base pour simuler cette fonction. Ne pas utiliser `docker compose down --volumes` : cela détruirait la base locale entière, pas un seul client.
+## Rembourser et clôturer
 
-La console cible doit distinguer trois actions :
+Un responsable magasin/société peut effectuer un remboursement intégral d’un ticket Caisse avec motif, dans une session ouverte du même magasin. Le logiciel restaure les quantités et coûts d’origine et inverse les règlements une seule fois, sous réserve de fonds suffisants. Les retours partiels et l’exécution bancaire du remboursement carte ne sont pas intégrés.
 
-| Action cible             | Effet attendu                                                                                                         | Disponibilité                |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
-| Suspendre                | Bloquer les nouvelles opérations / connexions selon le périmètre, conserver les données et permettre une réactivation | À développer dans la console |
-| Archiver                 | Retirer de l’activité courante, conserver l’historique en lecture seule et permettre une restauration                 | À développer                 |
-| Supprimer définitivement | Purger explicitement un périmètre après export et contrôles de conservation                                           | À développer                 |
+En clôture, saisir les espèces réellement comptées et un commentaire. Le système calcule l’attendu et l’écart. Une clôture équilibrée est rapprochée immédiatement. Un écart bloque la prochaine ouverture de cette caisse jusqu’à validation du responsable **société**, qui ajuste alors le solde enregistré. Le caissier et le responsable magasin ne peuvent pas valider eux-mêmes cet ajustement.
 
-La suppression d’une holding devra afficher les sociétés et données concernées, demander une confirmation explicite du nom et vérifier le droit de l’administrateur. La suppression d’une société devra traiter ses stocks, comptes et opérations liés sans supprimer ceux des autres sociétés. Les règles de conservation et le délai de restauration restent à définir avant mise en production.
+## Devenir administrateur plateforme
 
-L’archivage doit être l’action ordinaire de fermeture d’un client ; la suppression définitive doit être une action séparée. Aucune suppression n’a été exécutée lors de la rédaction de ce guide.
+Un opérateur disposant de la connexion de schéma `DATABASE_ADMIN_URL` peut désigner le **premier** administrateur pour un compte actif déjà créé :
 
-## 6. Exporter et sauvegarder
+```sh
+node scripts/bootstrap-admin.cjs email@example.com email@example.com
+```
 
-### Export disponible
+Les deux emails doivent correspondre. Ne pas placer la connexion ou le mot de passe dans la commande ni dans Git. Le script refuse un rôle SQL non opérateur et refuse de fonctionner si un administrateur plateforme existe déjà. Cette opération technique doit être consignée par l’opérateur ; il n’existe aucune route HTTP d’auto-promotion.
 
-Dans **Gestion du holding → Vue holding**, choisir toutes les sociétés autorisées ou une société, puis **Exporter**. Le CSV contient la synthèse : société, devise, banques, caisses, dettes, créances, stock, ventes et marge brute.
+## Ce qui reste à livrer
 
-Il ne contient pas les lignes de vente, produits, mouvements, factures, règlements, utilisateurs, droits, journal d’audit ou fichiers. Il ne permet pas de restaurer le système.
+La comptabilité légale et TVA, consolidation intersociétés/changes, paie, réservations, transferts en transit, réceptions/retours partiels, pièces jointes, intégrations banque/terminal, récupération de compte/email, abonnements commerciaux, assistant IA et modèles prédictifs ne sont pas encore implémentés. Les fonctionnalités de pilotage restent fondées sur les opérations saisies et des règles explicables.
 
-### Export complet cible
-
-L’écran d’export devra proposer : holding ou société, période, catégories de données et formats CSV/JSON. Une archive complète devra inclure les référentiels, commandes et lignes, expéditions, ventes et retours, stocks et mouvements, comptes et opérations, factures et règlements, configurations et historique d’audit. Les pièces jointes seront ajoutées lorsque leur stockage sera implémenté.
-
-Les exports devront respecter les mêmes périmètres que l’interface, être journalisés et exclure mots de passe, sessions, jetons d’invitation et secrets techniques. Les permissions administratives ne doivent pas être réimportées aveuglément depuis un fichier.
-
-### Sauvegarde technique
-
-Une sauvegarde PostgreSQL protège l’installation entière ; c’est une opération d’exploitation distincte de l’export client. Aujourd’hui, il n’existe pas d’écran de sauvegarde/restauration. Une procédure de sauvegardes automatiques avec test de restauration doit être mise en place avant commercialisation. Conserver le volume Docker et le fichier de configuration local protège les redémarrages, mais ne remplace pas une sauvegarde.
-
-## 7. Interface Caisse pour les clients
-
-### État actuel
-
-L’écran **Ventes** sait enregistrer une vente avec plusieurs articles, retirer le stock et créer une créance. L’encaissement est enregistré séparément dans **Banques & trésorerie**. Les disponibilités par emplacement se consultent dans **Stocks & transferts**.
-
-Il n’existe pas encore de parcours Caisse réunissant recherche, panier et paiement, ni de compte caissier limité à son magasin. Les tickets imprimables, sessions de caisse, lecteur de codes-barres, remises contrôlées, paiements mixtes et clôtures ne sont pas implémentés.
-
-### Parcours Caisse cible
-
-1. Le caissier se connecte à son magasin autorisé et ouvre sa session avec un fond de caisse.
-2. Il scanne un code-barres ou recherche une référence, taille et couleur.
-3. Il voit le prix, le stock disponible du magasin et, selon ses droits, la disponibilité ailleurs.
-4. Il ajoute les articles au panier. Les remises au-delà de son seuil nécessitent une autorisation.
-5. Il encaisse selon les moyens configurés : espèces, carte, paiement mixte ou crédit autorisé. Un terminal carte nécessite une intégration ; enregistrer « carte » ne déclenche pas de paiement bancaire.
-6. La validation enregistre atomiquement la vente, la sortie de stock et le règlement. Un double clic ou une nouvelle tentative ne doit pas doubler la vente.
-7. Il remet le ticket et retrouve les ventes de sa session.
-8. En fin de journée, il déclare la caisse comptée, compare le montant attendu et soumet les écarts au responsable.
-
-### Consulter un article ailleurs
-
-Pour une chaussure noire taille 42, la recherche cible montrera le stock physique, les réservations, le disponible à vendre et les transferts en cours de chaque emplacement autorisé de **la même société**. Le caissier pourra demander un transfert ou une réservation selon ses droits.
-
-La disponibilité dans une autre société sera bloquée par défaut. Un partage entre sociétés exige un workflow intersociétés distinct ; un stock visible n’est pas automatiquement transférable.
-
-Aujourd’hui, le système affiche du stock physique, sans réservations ni transferts en transit. Il ne faut pas présenter ce chiffre comme une disponibilité garantie tant que ces mécanismes ne sont pas développés.
-
-### Droits Caisse à ajouter
-
-| Profil cible         | Vendre                             | Stock ailleurs                             | Remises / retours                             | Trésorerie et coûts                                |
-| -------------------- | ---------------------------------- | ------------------------------------------ | --------------------------------------------- | -------------------------------------------------- |
-| Caissier             | Son magasin et sa session          | Lecture limitée aux emplacements autorisés | Selon seuils, avec autorisation si nécessaire | Aucun accès aux comptes bancaires ou coûts d’achat |
-| Responsable magasin  | Son magasin et son équipe          | Réseau autorisé de la société              | Validation dans ses limites                   | Sa caisse, ses clôtures et écarts                  |
-| Responsable société  | Tous ses magasins                  | Toute sa société                           | Paramétrage et validation                     | Selon rôle financier                               |
-| Propriétaire holding | Vue de supervision de ses sociétés | Ses sociétés                               | Supervision et délégation                     | Vue autorisée du holding                           |
-
-Ces profils sont une spécification à implémenter. Ils ne correspondent pas encore aux quatre rôles société actuels.
-
-## 8. Priorités pour une administration flexible
-
-1. Console éditeur avec liste des holdings, statut, responsables et accès administrateur traçables.
-2. Droits configurables par action, société et magasin, avec séparation de la consultation financière.
-3. Suspension, archivage, restauration et suppression contrôlée des holdings/sociétés.
-4. Export métier complet, sauvegardes automatiques et restauration testée.
-5. Caisse dédiée : catalogue, panier, encaissement, ticket et session de caisse.
-6. Disponibilités fiables : réservations, transferts demandés/expédiés/reçus et suivi des écarts.
-7. Connexions POS/paiement/banque et obligations comptables adaptées aux pays d’exploitation.
-
-Le guide décrit cette cible pour conserver l’ensemble de vos besoins. Il ne signifie pas que ces développements sont déjà réalisés.
+Avant commercialisation à grande échelle : normaliser les collections actuellement limitées à 8 Mo par holding, ajouter pagination et archivage technique, tester la charge, définir les règles de conservation et tester sauvegarde/restauration. Ne pas considérer cette version comme un ERP complet certifié.
