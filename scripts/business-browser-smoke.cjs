@@ -205,6 +205,7 @@ let failurePage;
   await page.getByRole("cell", { name: "Encaissement", exact: true }).waitFor();
   await page.getByRole("button", { name: "Vue holding", exact: true }).click();
   fs.mkdirSync("test-results", { recursive: true });
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
     path: "test-results/holding-desktop.png",
     fullPage: true,
@@ -217,6 +218,7 @@ let failurePage;
     false,
     "Mobile page overflows viewport",
   );
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
     path: "test-results/holding-mobile.png",
     fullPage: true,
@@ -280,6 +282,7 @@ let failurePage;
   await page
     .getByRole("button", { name: "Imprimer le ticket", exact: true })
     .waitFor();
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
     path: "test-results/pos-desktop.png",
     fullPage: true,
@@ -299,6 +302,7 @@ let failurePage;
     ),
     false,
   );
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
     path: "test-results/pos-mobile.png",
     fullPage: true,

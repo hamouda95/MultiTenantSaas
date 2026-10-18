@@ -47,6 +47,8 @@ For the **existing native Node service**, the reviewed build command needs to bu
 ```sh
 corepack pnpm install --frozen-lockfile --prod=false
 corepack pnpm build
+cp -R apps/web/.next/static apps/web/.next/standalone/apps/web/.next/static
+cp -R apps/web/public apps/web/.next/standalone/apps/web/public
 ```
 
 Set the start command to `node scripts/start-render.cjs`, executed from the repository root. It binds Next.js to Render's PORT and API to loopback port 4000, forwarding the exact public origin to the API. Do not switch an existing API client URL blindly: confirm whether clients rely on it before changing the service's routing.
