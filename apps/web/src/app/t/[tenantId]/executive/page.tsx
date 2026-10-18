@@ -2,7 +2,7 @@
 import { useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { companyMetrics, currencyDigits, periodOperatingResult } from "@saas/types";
+import { companyMetrics, currencyDigits, periodOperatingResult, monthlyOperatingResults } from "@saas/types";
 import { api } from "@/lib/api";
 import { PageHeader } from "@/components/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,6 +27,26 @@ export default function ExecutiveDashboard() {
   if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
   const currencies = new Set(companies.map((x) => x.company.currency));
   const commonCurrency = currencies.size === 1 ? companies[0]?.company.currency : null;
+  const [selectedCompany, setSelectedCompany] = useState("");
+  const activeCompany = companies.find(({ company }) => company.id === selectedCompany)?.company ?? companies[0]?.company;
+  const monthly = activeCompany && data ? monthlyOperatingResults(data.state, activeCompany, reportYear) : [];
+  const exportCsv = () => {
+    if (!activeCompany) return;
+    const rows = [
+      ["mois", "societe", "devise", "ca_minor", "cout_ventes_minor", "marge_brute_minor", "charges_minor", "contribution_minor"],
+      ...monthly.map((m) => [String(m.month).padStart(2, "0"), activeCompany.name, activeCompany.currency,
+        m.revenue, m.costOfGoodsSold, m.grossProfit, m.operatingExpenses, m.operatingContribution].map(String)),
+    ];
+    const escapeCsv = (value: string) => '"' + value.replace(/"/g, '""') + '"';
+    const csv = "\\uFEFF" + rows.map((row) => row.map((value) => escapeCsv(String(value))).join(";")).join("\\r\\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `reporting-${reportYear}-${activeCompany.id}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
   const total = (key: keyof ReturnType<typeof companyMetrics>) =>
     companies.reduce((sum, x) => sum + x.metrics[key], 0);
   return (
@@ -94,6 +114,30 @@ export default function ExecutiveDashboard() {
             })}</tbody>
           </table></div>
           <p className="mt-3 text-xs text-muted">Résultat opérationnel indicatif, filtré par date de vente et de charge. Pas de clôture comptable, fiscalité, amortissements ou consolidation intersociétés.</p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader><CardTitle>Évolution mensuelle — {reportYear}</CardTitle></CardHeader>
+        <CardContent>
+          <div className="mb-4 flex flex-wrap items-end gap-3">
+            <div><label htmlFor="report-company" className="mb-1 block text-sm font-medium">Société</label>
+              <select id="report-company" className="rounded-lg border border-border bg-surface px-3 py-2"
+                value={activeCompany?.id ?? ""} onChange={(e) => setSelectedCompany(e.target.value)}>
+                {companies.map(({ company }) => <option key={company.id} value={company.id}>{company.name}</option>)}
+              </select></div>
+            <button type="button" disabled={!activeCompany} onClick={exportCsv}
+              className="rounded-lg border border-border px-3 py-2 text-sm disabled:opacity-50">Exporter CSV</button>
+          </div>
+          {activeCompany ? <div className="overflow-x-auto"><table className="w-full text-left text-sm">
+            <thead><tr>{["Mois", "CA", "Marge brute", "Charges", "Contribution"].map((label) =>
+              <th key={label} scope="col" className="border-b border-border p-2">{label}</th>)}</tr></thead>
+            <tbody>{monthly.map((m) => <tr key={m.month}>
+              <th scope="row" className="border-b border-border p-2">{String(m.month).padStart(2, "0")}/{reportYear}</th>
+              {[m.revenue, m.grossProfit, m.operatingExpenses, m.operatingContribution].map((value, i) =>
+                <td key={i} className="whitespace-nowrap border-b border-border p-2">{fmt(value, activeCompany.currency)}</td>)}
+            </tr>)}</tbody>
+          </table></div> : <p className="text-muted">Aucune société accessible.</p>}
+          <p className="mt-3 text-xs text-muted">Export CSV en unités monétaires mineures, limité à la société visible sélectionnée. Données opérationnelles non certifiées.</p>
         </CardContent>
       </Card>
       <p className="text-xs text-muted">
