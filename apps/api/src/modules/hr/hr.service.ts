@@ -24,7 +24,7 @@ export class HrService {
       item.membershipId === tenant.membershipId);
     const role = owner || grant?.role === "MANAGER" ? "HR_MANAGER" :
       grant?.role === "OPERATIONS" ? "COMPANY_MANAGER" : "EMPLOYEE";
-    if (!owner && !grant && !state.companies.some(() => false)) {
+    if (!owner && !grant) {
       // Employees without a company grant can only use self-service via their linked user_id.
       const linked = await this.db.queryInTenantContext(tenant.tenantId,
         "SELECT 1 FROM hr_employees WHERE tenant_id=$1 AND company_id=$2 AND user_id=$3 LIMIT 1",
