@@ -13,8 +13,8 @@
     "clean": "turbo run clean"
   },
   "devDependencies": {
-    "turbo": "^2.1.3",
     "prettier": "^3.3.3",
+    "turbo": "^2.1.3",
     "typescript": "^5.6.3"
   },
   "engines": {
@@ -34,5 +34,9 @@
       "@nestjs/core",
       "esbuild"
     ]
+  },
+  "dependencies": {
+    "@neon/config": "^1.9.2",
+    "@neon/env": "^1.6.3"
   }
 }

@@ -47,3 +47,4 @@ build/
 
 # Browser validation output
 test-results/
+.neon
