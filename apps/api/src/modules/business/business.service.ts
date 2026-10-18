@@ -42,6 +42,7 @@ export class BusinessService {
         result.rows[0]?.state || emptyBusiness(),
         userId,
         owner,
+        tenant.membershipId,
       ),
       holdingOwner: owner,
       userId,
@@ -73,7 +74,12 @@ export class BusinessService {
           throw new ConflictException("Identifiant de commande déjà utilisé");
         return {
           version: Number(rows[0].version),
-          state: visibleBusiness(rows[0].state, userId, owner),
+          state: visibleBusiness(
+            rows[0].state,
+            userId,
+            owner,
+            tenant.membershipId,
+          ),
           holdingOwner: owner,
           userId,
         };
@@ -82,6 +88,7 @@ export class BusinessService {
         throw new ConflictException(
           "Les données ont changé. Actualisez avant de recommencer.",
         );
+      let targetMembershipId: string | undefined;
       if (command.action.type === "access.grant") {
         const member = await client.query(
           "SELECT id FROM memberships WHERE tenant_id=$1 AND user_id=$2 AND status='ACTIVE'",
@@ -91,13 +98,23 @@ export class BusinessService {
           throw new BadRequestException(
             "Invitez et activez ce membre avant de lui attribuer une société",
           );
+        targetMembershipId = member.rows[0].id;
       }
       const state = applyBusiness(
         rows[0].state as BusinessState,
         command.action,
         userId,
         owner,
+        new Date().toISOString(),
+        tenant.membershipId,
       );
+      if (command.action.type === "access.grant") {
+        const action = command.action;
+        const grant = state.access.find(
+          (g) => g.companyId === action.companyId && g.userId === action.userId,
+        );
+        if (grant) grant.membershipId = targetMembershipId;
+      }
       const encoded = JSON.stringify(state);
       if (Buffer.byteLength(encoded) > 8 * 1024 * 1024)
         throw new BadRequestException(
@@ -130,7 +147,7 @@ export class BusinessService {
       );
       return {
         version: Number(rows[0].version) + 1,
-        state: visibleBusiness(state, userId, owner),
+        state: visibleBusiness(state, userId, owner, tenant.membershipId),
         holdingOwner: owner,
         userId,
       };

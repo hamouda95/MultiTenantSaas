@@ -23,7 +23,7 @@ Open your workspace. Its default page now opens **Gestion du holding**. The prev
 6. In **Stocks & transferts**, distribute stock, or use **Intelligence** to review a suggested allocation and explicitly confirm it.
 7. Enter a store sale. It decrements stock and creates a receivable. Record the actual collection in Treasury. Supplier payments work similarly; partial payments are supported.
 8. Review company balances, amounts due, inventory value, cumulative sales/gross margin and a 30-day cash scenario in **Vue holding**. Export the company summary to CSV.
-9. Invite staff under **Membres**, have them accept the invitation, then assign company access under **Accès sociétés**. A workspace membership alone exposes no company data to non-owners.
+9. Invite staff under **Membres**, have them accept the invitation, then assign company access under **Accès sociétés**. A workspace membership alone exposes no company data to non-owners. Grants are bound to the membership lifetime: removing and re-inviting someone requires a fresh company grant.
 
 ## Implemented scope and boundaries
 

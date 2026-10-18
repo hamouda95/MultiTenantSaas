@@ -299,6 +299,25 @@ describe("Holding business operations", () => {
         false,
       ),
     ).toThrow("lecture seule");
+    f.s.access[0].membershipId = "old-membership";
+    expect(
+      visibleBusiness(f.s, operator, false, "new-membership").companies,
+    ).toHaveLength(0);
+    expect(() =>
+      applyBusiness(
+        structuredClone(f.s),
+        {
+          type: "location.create",
+          companyId: f.companyId,
+          name: "Denied after rejoin",
+          kind: "STORE",
+        },
+        operator,
+        false,
+        date,
+        "new-membership",
+      ),
+    ).toThrow();
     f.run({ type: "access.revoke", userId: operator });
     expect(visibleBusiness(f.s, operator, false).products).toHaveLength(0);
   });

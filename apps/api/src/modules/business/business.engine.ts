@@ -86,20 +86,32 @@ export function companyRole(
   companyId: string,
   userId: string,
   owner: boolean,
+  membershipId?: string,
 ) {
   return owner
     ? "MANAGER"
-    : s.access.find((g) => g.companyId === companyId && g.userId === userId)
-        ?.role;
+    : s.access.find(
+        (g) =>
+          g.companyId === companyId &&
+          g.userId === userId &&
+          (!membershipId || g.membershipId === membershipId),
+      )?.role;
 }
 export function visibleBusiness(
   s: BusinessState,
   userId: string,
   owner: boolean,
+  membershipId?: string,
 ): BusinessState {
   if (owner) return s;
   const ids = new Set(
-    s.access.filter((g) => g.userId === userId).map((g) => g.companyId),
+    s.access
+      .filter(
+        (g) =>
+          g.userId === userId &&
+          (!membershipId || g.membershipId === membershipId),
+      )
+      .map((g) => g.companyId),
   );
   return Object.fromEntries(
     Object.entries(s).map(([key, values]) => [
@@ -120,6 +132,7 @@ export function applyBusiness(
   userId: string,
   owner: boolean,
   now = new Date().toISOString(),
+  membershipId?: string,
 ): BusinessState {
   const date = now.slice(0, 10);
   if (a.type === "company.create") {
@@ -149,7 +162,7 @@ export function applyBusiness(
   const companyId = a.companyId;
   const company = s.companies.find((c) => c.id === companyId);
   if (!company) throw new NotFoundException("Société introuvable");
-  const role = companyRole(s, companyId, userId, owner);
+  const role = companyRole(s, companyId, userId, owner, membershipId);
   if (!role || role === "VIEWER")
     throw new ForbiddenException(
       "Accès en lecture seule ou société non autorisée",

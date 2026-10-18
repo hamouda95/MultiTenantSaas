@@ -592,6 +592,42 @@ describe.skipIf(!live)("Real PostgreSQL API and RLS integration", () => {
     } finally {
       connection.release();
     }
+    const removal = await request(
+      `/tenants/${tenantId}/members/${invitation.body.membershipId}`,
+      { method: "DELETE", cookie: ownerCookie },
+    );
+    expect(removal.status).toBe(200);
+    const rejoin = await request(`/tenants/${tenantId}/members`, {
+      method: "POST",
+      cookie: ownerCookie,
+      body: { email: viewerEmail, role: "Viewer" },
+    });
+    expect(rejoin.status).toBe(201);
+    expect(
+      (
+        await request("/tenants/invitations/accept", {
+          method: "POST",
+          cookie: viewerCookie,
+          body: { token: rejoin.body.invitationToken },
+        })
+      ).status,
+    ).toBe(201);
+    expect(
+      (await request(path, { cookie: viewerCookie })).body.state.companies,
+    ).toHaveLength(0);
+    expect(
+      (
+        await command(
+          {
+            type: "location.create",
+            companyId,
+            name: "Old grant denied",
+            kind: "STORE",
+          },
+          { cookie: viewerCookie },
+        )
+      ).status,
+    ).toBe(403);
   });
   it("revokes logged-out sessions server-side", async () => {
     expect(

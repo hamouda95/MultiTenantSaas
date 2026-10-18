@@ -127,6 +127,8 @@ export interface BusinessCashTransfer {
   date: string;
 }
 export interface BusinessAccess {
+  /** Bound to this invitation/membership lifetime; rejoining requires a new grant. */
+  membershipId?: string;
   companyId: string;
   userId: string;
   role: "MANAGER" | "FINANCE" | "OPERATIONS" | "VIEWER";
