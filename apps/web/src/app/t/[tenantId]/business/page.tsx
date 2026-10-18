@@ -27,6 +27,8 @@ import {
   currencyDigits,
   invoicePaid,
   productStock,
+  reservedStock,
+  availableStock,
   replenishment,
 } from "@saas/types";
 import type { BusinessState, BusinessCompany, BusinessLine } from "@saas/types";
@@ -1717,14 +1719,18 @@ export default function BusinessPage() {
             <Table
               headers={[
                 "Produit / variante",
-                ...locations.map((l) => l.name),
-                "Total",
-                "Valeur",
+                ...locations.map((l) => `${l.name} · physique`),
+                "Total physique",
+                "Réservé clients",
+                "Disponible à vendre",
+                "Valeur physique",
               ]}
               rows={products.map((p) => [
                 productName(p.id),
                 ...locations.map((l) => productStock(s, p.id, l.id)),
                 productStock(s, p.id),
+                reservedStock(s, p.id),
+                availableStock(s, p.id),
                 money(productStock(s, p.id) * p.cost, currency),
               ])}
             />
@@ -2232,7 +2238,7 @@ export default function BusinessPage() {
                   "Variante",
                   "Magasin",
                   "Vendus / 30 j",
-                  "Stock / cible",
+                  "Disponible / cible",
                   "Suggestion",
                   "Explication",
                   "Action",

@@ -80,8 +80,9 @@ export function SupplierSamples({
         <p className="mt-2 text-sm text-muted">
           Estimation explicable : ventes des 30 derniers jours × (délai
           fournisseur + couverture) / 30, plus stock minimum, moins stock
-          disponible et commandes en cours. Le minimum fournisseur peut
-          augmenter la quantité. Aucune commande n’est envoyée automatiquement.
+          disponible après réservations disponible et commandes en cours. Le
+          minimum fournisseur peut augmenter la quantité. Aucune commande n’est
+          envoyée automatiquement.
         </p>
         <label className="mt-3 block">
           Entrepôt de réception
@@ -143,7 +144,7 @@ export function SupplierSamples({
                       <tr>
                         <th className="text-left">Variante</th>
                         <th>Vendu / 30 j</th>
-                        <th>Stock</th>
+                        <th>Disponible hors réservations</th>
                         <th>En cours</th>
                         <th>À acheter</th>
                       </tr>

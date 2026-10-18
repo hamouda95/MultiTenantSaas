@@ -190,7 +190,7 @@ export function replenishment(
           0,
         );
         const dailyDemand = sold / 30,
-          current = productStock(s, product.id, store.id);
+          current = availableStock(s, product.id, store.id);
         const target = Math.max(
           c.minimumStock,
           Math.ceil(dailyDemand * (c.leadDays + c.coverDays)),
@@ -246,7 +246,7 @@ export function replenishment(
           quantity,
           available: starting,
           confidence: row.confidence,
-          explanation: `${row.sold} unités vendues sur 30 jours ÷ 30 × (${c.leadDays} jours de délai + ${c.coverDays} jours de couverture), minimum ${c.minimumStock}. Les quantités déjà en transit vers ce magasin sont déduites. Allocation plafonnée au stock entrepôt restant. Historique limité : vérifier avant transfert.`,
+          explanation: `${row.sold} unités vendues sur 30 jours ÷ 30 × (${c.leadDays} jours de délai + ${c.coverDays} jours de couverture), minimum ${c.minimumStock}. Les quantités déjà en transit vers ce magasin sont déduites. Les réservations clients sont déduites des stocks magasin et entrepôt. Allocation plafonnée au stock entrepôt restant. Historique limité : vérifier avant transfert.`,
         });
     }
   }
@@ -494,11 +494,11 @@ export function purchaseNeeds(
     return {
       productId: p.id,
       sold,
-      stock: productStock(s, p.id),
+      stock: availableStock(s, p.id),
       incoming: incoming + inTransit,
       quantity: Math.max(
         0,
-        target - productStock(s, p.id) - incoming - inTransit,
+        target - availableStock(s, p.id) - incoming - inTransit,
       ),
     };
   });

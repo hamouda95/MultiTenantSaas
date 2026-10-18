@@ -12,6 +12,7 @@ import {
   reservedStock,
   groupAnnual,
   replenishment,
+  purchaseNeeds,
 } from "@saas/types";
 const user = randomUUID(),
   staff = randomUUID(),
@@ -328,6 +329,44 @@ describe("Customer orders, reservations and management recognition", () => {
     ).toThrow();
     f.run({ type: "access.grant", userId: staff, role: "HR" });
     expect(visibleBusiness(f.s, staff, false).customerOrders).toHaveLength(0);
+  });
+  it("plans replenishment and purchasing from stock available after customer commitments", () => {
+    const f = fixture();
+    f.run({
+      type: "stock.transfer",
+      productId: f.p,
+      fromId: f.wh,
+      toId: f.store,
+      quantity: 1,
+    });
+    f.run({
+      type: "customerOrder.create",
+      reference: "STORE-CO",
+      customerId: f.customer,
+      locationId: f.store,
+      dueDate: "2026-11-01",
+      lines: [{ productId: f.p, quantity: 1, unitPrice: 2000 }],
+    });
+    f.run({
+      type: "customerOrder.confirm",
+      orderId: f.s.customerOrders![0].id,
+    });
+    expect(
+      replenishment(f.s, f.s.companies[0], f.wh, new Date(now))[0].quantity,
+    ).toBe(1);
+    f.create(9);
+    f.run({
+      type: "customerOrder.confirm",
+      orderId: f.s.customerOrders![1].id,
+    });
+    expect(
+      purchaseNeeds(
+        f.s,
+        f.s.companies[0],
+        { model: "Shoe", leadDays: 1, minimumQuantity: 1 },
+        new Date(now),
+      )[0].quantity,
+    ).toBe(1);
   });
   it("keeps replenishment within unreserved warehouse stock", () => {
     const f = fixture();
