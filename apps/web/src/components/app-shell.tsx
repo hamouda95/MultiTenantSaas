@@ -266,8 +266,7 @@ export function AppShell({
       <nav aria-label="Navigation principale" className="flex-1 space-y-1">
         {NAV.map(({ href, label, icon: Icon }) => {
           const full = `${base}${href}`;
-          const active =
-            href === "" ? pathname === base : pathname.startsWith(full);
+          const active = pathname === full || pathname.startsWith(`${full}/`);
           return (
             <Link
               key={label}
