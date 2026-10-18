@@ -22,8 +22,8 @@ export class HrService {
     const grant = state.access?.find((item: {companyId:string;userId:string;membershipId?:string;role:string}) =>
       item.companyId === companyId && item.userId === user.userId &&
       item.membershipId === tenant.membershipId);
-    const role = owner || grant?.role === "MANAGER" ? "HR_MANAGER" :
-      grant?.role === "OPERATIONS" ? "COMPANY_MANAGER" : "EMPLOYEE";
+    const role = owner || (grant?.role === "MANAGER" && tenant.permissions.includes("hr:manage")) ? "HR_MANAGER" :
+      grant?.role === "OPERATIONS" || grant?.role === "MANAGER" ? "COMPANY_MANAGER" : "EMPLOYEE";
     if (!owner && !grant) {
       // Employees without a company grant can only use self-service via their linked user_id.
       const linked = await this.db.queryInTenantContext(tenant.tenantId,
@@ -51,6 +51,13 @@ export class HrService {
     if (scope.role !== "HR_MANAGER") throw new ForbiddenException();
     validatePeriod(data.startDate, data.endDate ?? null);
     if (!data.displayName.trim() || data.displayName.length > 255) throw new BadRequestException("Invalid name");
+    if (data.userId) {
+      const member = await this.db.queryAdmin(
+        "SELECT 1 FROM memberships WHERE tenant_id=$1 AND user_id=$2 AND status='ACTIVE'",
+        [tenant.tenantId, data.userId],
+      );
+      if (!member.rows.length) throw new BadRequestException("Employee account must be an active holding member");
+    }
     const result = await this.db.queryInTenantContext(tenant.tenantId,
       "INSERT INTO hr_employees(id,tenant_id,company_id,user_id,display_name,start_date,end_date) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id",
       [randomUUID(),tenant.tenantId,companyId,data.userId ?? null,data.displayName.trim(),data.startDate,data.endDate ?? null]);
