@@ -52,7 +52,7 @@ export class HrService {
     validatePeriod(data.startDate, data.endDate ?? null);
     if (!data.displayName.trim() || data.displayName.length > 255) throw new BadRequestException("Invalid name");
     if (data.userId) {
-      const member = await this.db.queryAdmin(
+      const member = await this.db.queryInTenantContext(tenant.tenantId,
         "SELECT 1 FROM memberships WHERE tenant_id=$1 AND user_id=$2 AND status='ACTIVE'",
         [tenant.tenantId, data.userId],
       );
