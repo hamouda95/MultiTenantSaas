@@ -246,7 +246,12 @@ export function FinancingPanel({
               </label>
               <label className="text-sm">
                 Compte de déblocage
-                <select name="accountId" required className={select}>
+                <select
+                  name="accountId"
+                  aria-label="Compte de déblocage"
+                  required
+                  className={select}
+                >
                   {banks.map((b) => (
                     <option key={b.id} value={b.id}>
                       {b.name}
@@ -256,7 +261,11 @@ export function FinancingPanel({
               </label>
               <label className="text-sm">
                 Commande financée
-                <select name="orderId" className={select}>
+                <select
+                  name="orderId"
+                  aria-label="Commande financée"
+                  className={select}
+                >
                   <option value="">Non affecté</option>
                   {s.orders
                     .filter(
@@ -328,7 +337,12 @@ export function FinancingPanel({
             >
               <label className="text-sm">
                 Crédit à rembourser
-                <select name="financingId" required className={select}>
+                <select
+                  name="financingId"
+                  aria-label="Crédit à rembourser"
+                  required
+                  className={select}
+                >
                   <option value="">Choisir un crédit débloqué</option>
                   {loans
                     .filter(
@@ -344,7 +358,12 @@ export function FinancingPanel({
               </label>
               <label className="text-sm">
                 Compte de remboursement
-                <select name="accountId" required className={select}>
+                <select
+                  name="accountId"
+                  aria-label="Compte de remboursement"
+                  required
+                  className={select}
+                >
                   {banks.map((b) => (
                     <option key={b.id} value={b.id}>
                       {b.name}
