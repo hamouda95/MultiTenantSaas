@@ -4,7 +4,7 @@ Cette version organise les tâches par métier et conserve les données des soci
 
 ## Espaces et droits
 
-Le sélecteur « Espace métier » organise les écrans ; il ne change pas l'identité ni les autorisations. Un propriétaire peut présenter tous les espaces avec son compte. Pour donner de vrais droits distincts : inviter un membre, lui faire accepter l'invitation, puis lui attribuer un rôle dans « Accès sociétés ».
+Le répertoire « Départements de l’ERP » regroupe les grandes tâches sous chaque département. Le filtre « Département » organise les écrans ; il ne change pas l'identité ni les autorisations. Un propriétaire peut présenter tous les espaces avec son compte. Pour donner de vrais droits distincts : inviter un membre, lui faire accepter l'invitation, puis lui attribuer un rôle dans « Accès sociétés ».
 
 | Rôle société                        | Usage                                                                | Restrictions                                                                                                             |
 | ----------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
@@ -56,3 +56,9 @@ La logistique saisit un bon de livraison unique et les quantités réellement li
 Le stock physique et sa valeur incluent les réservations ; le disponible en caisse, les sorties et les propositions d’allocation entre magasins les déduisent. Les réservations sont rattachées à un emplacement précis. Annuler une commande partiellement livrée libère uniquement son reliquat et conserve ventes, créances et traçabilité des livraisons antérieures. Un retour ne réouvre pas automatiquement la réservation de la commande.
 
 Ce parcours ne couvre pas encore les devis, acomptes, expéditions transporteurs, livraisons partielles de transferts, factures fiscales/TVA, multi-emplacements dans une même commande ni les précommandes au-delà du stock disponible. Le paiement d’une livraison utilise les créances habituelles en Finance. Les modifications de lignes après confirmation nécessitent l’annulation du reliquat puis une nouvelle commande.
+
+## Navigation par département
+
+L’accueil métier présente Direction du groupe, Service achats, Entrepôts & logistique, Ventes & magasins, Finance & trésorerie et Ressources humaines, selon les accès attribués. Chaque carte contient ses grandes tâches. Le filtre permet de concentrer l’affichage sur un département ; « Tous les départements autorisés » rétablit le répertoire complet.
+
+Une tâche commune apparaît une seule fois dans le répertoire complet, sous son département principal. Elle reste disponible dans les autres départements autorisés qui y participent : par exemple, les commandes clients dans Ventes, Logistique et Finance. Le fil de navigation indique le département et la tâche ouverts. Cette organisation visuelle ne crée aucune nouvelle autorisation et ne remplace pas les contrôles serveur/RLS.

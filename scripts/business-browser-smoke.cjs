@@ -23,7 +23,7 @@ let failurePage;
   const page = await context.newPage();
   failurePage = page;
   const allSpaces = async () =>
-    page.getByLabel("Espace métier", { exact: true }).selectOption("tous");
+    page.getByLabel("Département", { exact: true }).selectOption("tous");
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   const headers = { Origin: "http://localhost:3000" };
@@ -878,6 +878,59 @@ let failurePage;
   await page
     .getByRole("heading", { name: "CO-BROWSER · Annulée", exact: true })
     .waitFor();
+  // Department directory: shared tasks remain reachable with a unique all-departments entry.
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await allSpaces();
+  const departments = page.getByRole("navigation", {
+    name: "Départements et grandes tâches",
+    exact: true,
+  });
+  await departments
+    .getByRole("heading", { name: "Service achats", exact: true })
+    .waitFor();
+  await departments
+    .getByRole("heading", { name: "Ventes & magasins", exact: true })
+    .waitFor();
+  assert.equal(
+    await departments
+      .getByRole("button", { name: "Commandes clients", exact: true })
+      .count(),
+    1,
+  );
+  await page.screenshot({
+    path: "test-results/departments-desktop.png",
+    fullPage: true,
+  });
+  await page.getByLabel("Département", { exact: true }).selectOption("finance");
+  await departments
+    .getByRole("heading", { name: "Finance & trésorerie", exact: true })
+    .waitFor();
+  assert.equal(
+    await departments
+      .getByRole("heading", { name: "Service achats", exact: true })
+      .count(),
+    0,
+  );
+  await departments
+    .getByRole("button", { name: "Commandes clients", exact: true })
+    .click();
+  await page
+    .getByRole("heading", {
+      name: "Commandes clients & livraisons",
+      exact: true,
+    })
+    .waitFor();
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth > innerWidth,
+    ),
+    false,
+  );
+  await page.screenshot({
+    path: "test-results/departments-mobile.png",
+    fullPage: true,
+  });
   await page.goto("/administration");
   await page
     .getByRole("heading", { name: "Administration des holdings", exact: true })

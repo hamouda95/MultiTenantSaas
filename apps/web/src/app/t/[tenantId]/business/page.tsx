@@ -20,6 +20,7 @@ import {
   Sparkles,
   RefreshCw,
   Download,
+  Users,
 } from "lucide-react";
 import {
   accountBalance,
@@ -539,7 +540,7 @@ export default function BusinessPage() {
     retry: false,
   });
   const [tab, setTab] = useState("group");
-  const [profile, setProfile] = useState("direction");
+  const [profile, setProfile] = useState("tous");
   const [selected, setSelected] = useState("");
   const [warehouse, setWarehouse] = useState("");
   const [busy, setBusy] = useState(false);
@@ -731,6 +732,58 @@ export default function BusinessPage() {
       : spaces.filter((x) => x.id === activeProfile)
     ).flatMap((x) => x.views),
   );
+  const departmentInfo = {
+    direction: {
+      icon: Building2,
+      description: "Consolider, analyser et administrer le groupe",
+    },
+    achats: {
+      icon: ShoppingCart,
+      description:
+        "Préparer les collections et suivre les commandes fournisseurs",
+    },
+    logistique: {
+      icon: Package,
+      description: "Réceptionner, stocker et distribuer les marchandises",
+    },
+    ventes: {
+      icon: TrendingUp,
+      description: "Gérer les clients, les commandes et les ventes",
+    },
+    finance: {
+      icon: Wallet,
+      description: "Suivre les règlements, les financements et la trésorerie",
+    },
+    rh: {
+      icon: Users,
+      description: "Gérer les équipes et les coûts de personnel",
+    },
+  };
+  // Shared tasks have one primary home in the full directory, but remain reachable
+  // in every authorized department that participates in the workflow.
+  const preferredDepartment: Record<string, string> = {
+    customerOrders: "ventes",
+    inventory: "logistique",
+    catalog: "achats",
+  };
+  const taskDepartment = (id: string) => {
+    const candidates = spaces.filter((x) => x.views.includes(id));
+    return (
+      candidates.find((x) => x.id === preferredDepartment[id])?.id ||
+      candidates[0]?.id
+    );
+  };
+  const navigationDepartments = spaces
+    .filter((x) => activeProfile === "tous" || x.id === activeProfile)
+    .map((x) => ({
+      ...x,
+      tasks: tabs.filter(
+        ([id]) =>
+          x.views.includes(id) &&
+          (activeProfile !== "tous" || taskDepartment(id) === x.id),
+      ),
+    }))
+    .filter((x) => x.tasks.length > 0);
   const activeTab = availableTabs.has(tab)
     ? tab
     : spaces.find((x) => x.id === activeProfile)?.views[0] ||
@@ -899,50 +952,107 @@ export default function BusinessPage() {
           </div>
         </div>
       )}
-      <div className="mb-4 flex flex-wrap items-end gap-4 rounded-xl border border-border bg-surface p-4">
-        <label className="min-w-64 text-sm font-medium">
-          Espace métier
-          <select
-            aria-label="Espace métier"
-            className={selectClass}
-            value={activeProfile}
-            onChange={(e) => {
-              const value = e.target.value;
-              setProfile(value);
-              setTab(
-                value === "tous"
-                  ? spaces[0]?.views[0] || "overview"
-                  : spaces.find((x) => x.id === value)!.views[0],
-              );
-            }}
-          >
-            {spaces.map((x) => (
-              <option key={x.id} value={x.id}>
-                {x.name}
-              </option>
-            ))}
-            <option value="tous">Tous les espaces autorisés</option>
-          </select>
-        </label>
-        <p className="text-xs text-muted">
-          Choisissez votre métier, puis le document ou la tâche à traiter. Les
-          droits sont contrôlés par société côté serveur.
-        </p>
-      </div>
-      <nav aria-label="Modules métier" className="mb-6 flex flex-wrap gap-2">
-        {tabs
-          .filter(([id]) => availableTabs.has(id))
-          .map(([id, label]) => (
-            <Button
-              key={id}
-              variant={activeTab === id ? "primary" : "secondary"}
-              size="sm"
-              onClick={() => setTab(id)}
+      <section aria-labelledby="departments-title" className="mb-6 space-y-4">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h2 id="departments-title" className="text-xl font-semibold">
+              Départements de l’ERP
+            </h2>
+            <p className="mt-1 text-sm text-muted">
+              Choisissez un département, puis une grande tâche. Les parcours
+              partagés restent accessibles aux métiers concernés.
+            </p>
+          </div>
+          <label className="w-full text-sm font-medium sm:w-72">
+            Département
+            <select
+              aria-label="Département"
+              className={selectClass}
+              value={activeProfile}
+              onChange={(e) => {
+                const value = e.target.value;
+                setProfile(value);
+                const next =
+                  value === "tous"
+                    ? spaces
+                    : spaces.filter((x) => x.id === value);
+                if (!next.some((x) => x.views.includes(tab)))
+                  setTab(next[0]?.views[0] || "overview");
+              }}
             >
-              {label}
-            </Button>
-          ))}
-      </nav>
+              <option value="tous">Tous les départements autorisés</option>
+              {spaces.map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <nav
+          aria-label="Départements et grandes tâches"
+          className="grid gap-4 md:grid-cols-2 xl:grid-cols-3"
+        >
+          {navigationDepartments.map((department) => {
+            const info =
+                departmentInfo[department.id as keyof typeof departmentInfo],
+              Icon = info.icon;
+            const selected = department.tasks.some(([id]) => id === activeTab);
+            return (
+              <section
+                key={department.id}
+                aria-labelledby={`department-${department.id}`}
+                className={`min-w-0 rounded-xl border bg-surface p-4 ${selected ? "border-brand-accent" : "border-border"}`}
+              >
+                <div className="mb-3 flex items-start gap-3">
+                  <span className="rounded-lg bg-surface-2 p-2 text-accent">
+                    <Icon className="h-5 w-5" aria-hidden="true" />
+                  </span>
+                  <div>
+                    <h3
+                      id={`department-${department.id}`}
+                      className="font-semibold"
+                    >
+                      {department.name}
+                    </h3>
+                    <p className="mt-1 text-xs text-muted">
+                      {info.description}
+                    </p>
+                  </div>
+                </div>
+                <ul className="space-y-2">
+                  {department.tasks.map(([id, label]) => (
+                    <li key={id}>
+                      <Button
+                        variant={activeTab === id ? "primary" : "secondary"}
+                        size="sm"
+                        aria-current={activeTab === id ? "page" : undefined}
+                        className="h-auto min-h-9 w-full justify-start whitespace-normal py-2 text-left"
+                        onClick={() => setTab(id)}
+                      >
+                        {label}
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            );
+          })}
+        </nav>
+        <p aria-live="polite" className="text-sm text-muted">
+          <span className="font-medium text-fg">
+            {spaces.find(
+              (x) =>
+                x.id ===
+                (activeProfile === "tous"
+                  ? taskDepartment(activeTab)
+                  : activeProfile),
+            )?.name || "ERP"}
+          </span>
+          {" / "}
+          {tabs.find(([id]) => id === activeTab)?.[1]}
+        </p>
+      </section>
       {error && (
         <div
           role="alert"
