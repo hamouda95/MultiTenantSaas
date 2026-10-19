@@ -4,7 +4,7 @@ Cette version organise les tâches par métier et conserve les données des soci
 
 ## Espaces et droits
 
-Le répertoire « Départements de l’ERP » regroupe les grandes tâches sous chaque département. Le filtre « Département » organise les écrans ; il ne change pas l'identité ni les autorisations. Un propriétaire peut présenter tous les espaces avec son compte. Pour donner de vrais droits distincts : inviter un membre, lui faire accepter l'invitation, puis lui attribuer un rôle dans « Accès sociétés ».
+Le répertoire « Départements de l’ERP » regroupe les grandes tâches sous chaque département. Le filtre « Département ERP » organise les écrans ; il ne change pas l'identité ni les autorisations. Un propriétaire peut présenter tous les espaces avec son compte. Pour donner de vrais droits distincts : inviter un membre, lui faire accepter l'invitation, puis lui attribuer un rôle dans « Accès sociétés ».
 
 | Rôle société                        | Usage                                                                | Restrictions                                                                                                             |
 | ----------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |

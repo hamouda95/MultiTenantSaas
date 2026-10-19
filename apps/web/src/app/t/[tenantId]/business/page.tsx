@@ -964,9 +964,9 @@ export default function BusinessPage() {
             </p>
           </div>
           <label className="w-full text-sm font-medium sm:w-72">
-            Département
+            Département ERP
             <select
-              aria-label="Département"
+              aria-label="Département ERP"
               className={selectClass}
               value={activeProfile}
               onChange={(e) => {

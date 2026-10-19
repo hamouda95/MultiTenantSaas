@@ -23,7 +23,7 @@ let failurePage;
   const page = await context.newPage();
   failurePage = page;
   const allSpaces = async () =>
-    page.getByLabel("Département", { exact: true }).selectOption("tous");
+    page.getByLabel("Département ERP", { exact: true }).selectOption("tous");
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   const headers = { Origin: "http://localhost:3000" };
@@ -901,7 +901,9 @@ let failurePage;
     path: "test-results/departments-desktop.png",
     fullPage: true,
   });
-  await page.getByLabel("Département", { exact: true }).selectOption("finance");
+  await page
+    .getByLabel("Département ERP", { exact: true })
+    .selectOption("finance");
   await departments
     .getByRole("heading", { name: "Finance & trésorerie", exact: true })
     .waitFor();
