@@ -1034,6 +1034,26 @@ export default function BusinessPage() {
                       </Button>
                     </li>
                   ))}
+                  {department.id === "ventes" && has(["MANAGER"]) && (
+                    <li>
+                      <Link
+                        href={`/t/${tenantId}/pos`}
+                        className="block rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-surface-2"
+                      >
+                        Caisse magasin
+                      </Link>
+                    </li>
+                  )}
+                  {department.id === "rh" && (
+                    <li>
+                      <Link
+                        href={`/t/${tenantId}/hr`}
+                        className="block rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-surface-2"
+                      >
+                        Contrats et congés
+                      </Link>
+                    </li>
+                  )}
                 </ul>
               </section>
             );
