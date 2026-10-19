@@ -33,7 +33,7 @@ Le visuel `apps/web/public/demo/supplier-samples.png` est généré, sans marque
 
 ## Nouveaux parcours ERP
 
-Le sélecteur « Espace métier » propose Direction, Achats, Logistique, Ventes, Finance et RH. Un choix d'espace ne change pas les droits du compte. Les rôles réels se donnent dans « Accès sociétés » : Achats, Logistique et RH ont des autorisations distinctes contrôlées par l'API.
+Le répertoire « Départements de l’ERP » présente Direction, Achats, Logistique, Ventes, Finance et RH, avec leurs grandes tâches en dessous. Le filtre « Département ERP » permet de se concentrer sur un département. Ce choix ne change pas les droits du compte. Les rôles réels se donnent dans « Accès sociétés » : Achats, Logistique et RH ont des autorisations distinctes contrôlées par l'API.
 
 Après extension de la démonstration :
 
