@@ -56,6 +56,7 @@ BEGIN
   FOREACH tab IN ARRAY ARRAY['hr_employees','hr_contracts','hr_leave_requests'] LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY',tab);
     EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY',tab);
+    EXECUTE format('DROP POLICY IF EXISTS hr_tenant_isolation ON %I',tab);
     EXECUTE format('CREATE POLICY hr_tenant_isolation ON %I USING (tenant_id = current_tenant_id()) WITH CHECK (tenant_id = current_tenant_id())',tab);
     EXECUTE format('GRANT SELECT,INSERT,UPDATE ON %I TO saas_app_user',tab);
   END LOOP;

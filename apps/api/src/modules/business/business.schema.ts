@@ -38,9 +38,16 @@ const company = z
     minimumStock: z.number().int().min(0).max(100000),
     modules: z
       .array(
-        z.enum(["purchasing", "inventory", "sales", "finance", "intelligence"]),
+        z.enum([
+          "purchasing",
+          "inventory",
+          "sales",
+          "finance",
+          "intelligence",
+          "hr",
+        ]),
       )
-      .max(5),
+      .max(6),
   })
   .strict();
 export const BusinessCommandSchema = z
@@ -48,7 +55,344 @@ export const BusinessCommandSchema = z
     commandId: id,
     version: z.number().int().min(0),
     action: z.discriminatedUnion("type", [
+      z
+        .object({
+          type: z.literal("customerOrder.create"),
+          companyId: id,
+          reference: text,
+          customerId: id,
+          locationId: id,
+          lines,
+          dueDate: date,
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("customerOrder.confirm"),
+          companyId: id,
+          orderId: id,
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("customerOrder.cancel"),
+          companyId: id,
+          orderId: id,
+          reason: text,
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("customerOrder.deliver"),
+          companyId: id,
+          orderId: id,
+          reference: text,
+          lines: z
+            .array(
+              z
+                .object({
+                  productId: id,
+                  quantity: z.number().int().min(1).max(1000000),
+                })
+                .strict(),
+            )
+            .min(1)
+            .max(100)
+            .refine(
+              (v) => new Set(v.map((x) => x.productId)).size === v.length,
+            ),
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("order.receive"),
+          companyId: id,
+          orderId: id,
+          reference: text,
+          lines: z
+            .array(
+              z
+                .object({
+                  productId: id,
+                  quantity: z.number().int().min(1).max(1000000),
+                })
+                .strict(),
+            )
+            .min(1)
+            .max(100)
+            .refine(
+              (v) => new Set(v.map((x) => x.productId)).size === v.length,
+            ),
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("stock.ship"),
+          companyId: id,
+          reference: text,
+          fromId: id,
+          toId: id,
+          lines: z
+            .array(
+              z
+                .object({
+                  productId: id,
+                  quantity: z.number().int().min(1).max(1000000),
+                })
+                .strict(),
+            )
+            .min(1)
+            .max(100)
+            .refine(
+              (v) => new Set(v.map((x) => x.productId)).size === v.length,
+            ),
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("stock.receiveTransfer"),
+          companyId: id,
+          transferId: id,
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("intercompany.create"),
+          companyId: id,
+          toCompanyId: id,
+          reference: text,
+          description: text,
+          amount: positive,
+          dueDate: date,
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("intercompany.settle"),
+          companyId: id,
+          chargeId: id,
+          payerAccountId: id,
+          receiverAccountId: id,
+          amount: positive,
+        })
+        .strict(),
       z.object({ type: z.literal("company.create"), data: company }).strict(),
+      z
+        .object({
+          type: z.literal("hr.employee.create"),
+          companyId: id,
+          fullName: text,
+          jobTitle: text,
+          department: text,
+          locationId: id.optional(),
+          grossSalary: positive,
+          employerChargesBps: z.number().int().min(0).max(10000),
+          hiredAt: date,
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("hr.employee.update"),
+          companyId: id,
+          employeeId: id,
+          fullName: text,
+          jobTitle: text,
+          department: text,
+          locationId: id.optional(),
+          grossSalary: positive,
+          employerChargesBps: z.number().int().min(0).max(10000),
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("hr.employee.status"),
+          companyId: id,
+          employeeId: id,
+          status: z.enum(["ACTIVE", "INACTIVE"]),
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("hr.payroll.record"),
+          companyId: id,
+          employeeId: id,
+          period: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("hr.payroll.pay"),
+          companyId: id,
+          payrollId: id,
+          accountId: id,
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("sample.create"),
+          companyId: id,
+          supplierId: id,
+          model: text,
+          reference: text,
+          photoUrl: z.union([
+            z.string().regex(/^\/demo\/[a-zA-Z0-9_./-]+$/),
+            z
+              .string()
+              .url()
+              .refine((u) => u.startsWith("https://")),
+          ]),
+          unitCost: positive,
+          minimumQuantity: z.number().int().min(1).max(100000),
+          leadDays: z.number().int().min(1).max(365),
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("sample.approve"),
+          companyId: id,
+          sampleId: id,
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("company.lifecycle"),
+          companyId: id,
+          status: z.enum(["ACTIVE", "ARCHIVED", "DELETED"]),
+          confirmation: text,
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("product.pricing"),
+          companyId: id,
+          productId: id,
+          salePrice: positive,
+          barcode: z.string().trim().max(80),
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("pos.configure"),
+          companyId: id,
+          locationId: id,
+          cashAccountId: id,
+          cardAccountId: id,
+          customerId: id,
+          maxDiscountBps: z.number().int().min(0).max(10000),
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("pos.customer.create"),
+          companyId: id,
+          locationId: id,
+          name: text,
+          email: z.union([z.literal(""), z.string().email().max(254)]),
+          phone: z.string().trim().max(40),
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("partner.update"),
+          companyId: id,
+          partnerId: id,
+          name: text,
+          email: z.union([z.literal(""), z.string().email().max(254)]),
+          phone: z.string().trim().max(40),
+          address: z.string().trim().max(300),
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("financing.create"),
+          companyId: id,
+          reference: text,
+          bank: text,
+          accountId: id,
+          orderId: id.optional(),
+          principal: positive,
+          interest: money,
+          dueDate: date,
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("financing.draw"),
+          companyId: id,
+          financingId: id,
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("financing.repay"),
+          companyId: id,
+          financingId: id,
+          accountId: id,
+          principal: money,
+          interest: money,
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("pos.open"),
+          companyId: id,
+          locationId: id,
+          opening: money,
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("pos.checkout"),
+          companyId: id,
+          sessionId: id,
+          customerId: id.optional(),
+          items: z
+            .array(
+              z
+                .object({
+                  productId: id,
+                  quantity: z.number().int().min(1).max(10000),
+                })
+                .strict(),
+            )
+            .min(1)
+            .max(100)
+            .refine(
+              (v) => new Set(v.map((l) => l.productId)).size === v.length,
+            ),
+          discountBps: z.number().int().min(0).max(10000),
+          cash: money,
+          card: money,
+          cashGiven: money,
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("pos.close"),
+          companyId: id,
+          sessionId: id,
+          counted: money,
+          reason: text,
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("pos.reconcile"),
+          companyId: id,
+          sessionId: id,
+          reason: text,
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("pos.refund"),
+          companyId: id,
+          sessionId: id,
+          saleId: id,
+          reason: text,
+        })
+        .strict(),
+
       z
         .object({
           type: z.literal("company.configure"),
@@ -61,7 +405,18 @@ export const BusinessCommandSchema = z
           type: z.literal("access.grant"),
           companyId: id,
           userId: id,
-          role: z.enum(["MANAGER", "FINANCE", "OPERATIONS", "VIEWER"]),
+          role: z.enum([
+            "MANAGER",
+            "FINANCE",
+            "OPERATIONS",
+            "BUYER",
+            "WAREHOUSE",
+            "HR",
+            "VIEWER",
+            "CASHIER",
+            "STORE_MANAGER",
+          ]),
+          locationIds: z.array(id).max(100).optional(),
         })
         .strict(),
       z
@@ -80,6 +435,9 @@ export const BusinessCommandSchema = z
           type: z.literal("product.create"),
           companyId: id,
           sku: text,
+          model: z.string().trim().max(160).optional(),
+          salePrice: positive.optional(),
+          barcode: z.string().trim().max(80).optional(),
           name: text,
           brand: z.string().trim().max(160),
           size: z.string().trim().max(80),
@@ -93,6 +451,8 @@ export const BusinessCommandSchema = z
           name: text,
           kind: z.enum(["SUPPLIER", "CUSTOMER"]),
           email: z.union([z.literal(""), z.string().email().max(254)]),
+          phone: z.string().trim().max(40).optional(),
+          address: z.string().trim().max(300).optional(),
         })
         .strict(),
       z

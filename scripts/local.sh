@@ -53,6 +53,7 @@ case "$action" in
     "${compose[@]}" up -d --wait postgres
     # Additive, idempotent upgrade for existing installations. Never removes volumes.
     "${compose[@]}" exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /migrations/05_business.sql'
+    "${compose[@]}" exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -f /migrations/06_administration.sql'
     "${compose[@]}" up --build -d --wait
     printf '\nApp ready: http://localhost:3000\nCreate an account using the “Créer un compte” button.\nStop: ./scripts/local.sh stop\nLogs: ./scripts/local.sh logs\n'
     if [ "$(uname -s)" = Darwin ] && command -v open >/dev/null 2>&1; then

@@ -9,6 +9,7 @@ export interface BusinessCompany {
   coverDays: number;
   minimumStock: number;
   modules: string[];
+  status?: "ACTIVE" | "ARCHIVED" | "DELETED";
 }
 export interface BusinessLocation {
   id: string;
@@ -20,11 +21,14 @@ export interface BusinessProduct {
   id: string;
   companyId: string;
   sku: string;
+  model?: string;
   name: string;
   brand: string;
   size: string;
   color: string;
   cost: number;
+  salePrice?: number;
+  barcode?: string;
 }
 export interface BusinessAccount {
   id: string;
@@ -41,6 +45,8 @@ export interface BusinessPartner {
   name: string;
   kind: "SUPPLIER" | "CUSTOMER";
   email: string;
+  phone?: string;
+  address?: string;
 }
 export interface BusinessLine {
   productId: string;
@@ -61,6 +67,7 @@ export interface BusinessOrder {
     | "SHIPPED"
     | "CUSTOMS"
     | "RECEIVED"
+    | "PARTIALLY_RECEIVED"
     | "CANCELLED";
   origin: string;
   eta: string;
@@ -69,6 +76,7 @@ export interface BusinessOrder {
   createdAt: string;
 }
 export interface BusinessInvoice {
+  intercompanyId?: string;
   id: string;
   companyId: string;
   kind: "PAYABLE" | "RECEIVABLE";
@@ -80,6 +88,7 @@ export interface BusinessInvoice {
   createdAt: string;
 }
 export interface BusinessPayment {
+  posSessionId?: string;
   id: string;
   companyId: string;
   invoiceId: string;
@@ -106,6 +115,7 @@ export interface BusinessSale {
   lines: BusinessLine[];
   unitCosts: Record<string, number>;
   cost: number;
+  posSessionId?: string;
   total: number;
   returned: boolean;
   date: string;
@@ -131,7 +141,17 @@ export interface BusinessAccess {
   membershipId?: string;
   companyId: string;
   userId: string;
-  role: "MANAGER" | "FINANCE" | "OPERATIONS" | "VIEWER";
+  role:
+    | "MANAGER"
+    | "FINANCE"
+    | "OPERATIONS"
+    | "BUYER"
+    | "WAREHOUSE"
+    | "HR"
+    | "VIEWER"
+    | "CASHIER"
+    | "STORE_MANAGER";
+  locationIds?: string[];
 }
 export interface BusinessEvent {
   id: string;
@@ -142,6 +162,11 @@ export interface BusinessEvent {
   reference: string;
 }
 export interface BusinessState {
+  customerOrders?: CustomerOrder[];
+  customerDeliveries?: CustomerDelivery[];
+  receipts?: PurchaseReceipt[];
+  transfers?: StockTransfer[];
+  intercompany?: IntercompanyCharge[];
   companies: BusinessCompany[];
   locations: BusinessLocation[];
   products: BusinessProduct[];
@@ -156,8 +181,33 @@ export interface BusinessState {
   cashTransfers: BusinessCashTransfer[];
   access: BusinessAccess[];
   events: BusinessEvent[];
+  employees?: BusinessEmployee[];
+  payroll?: BusinessPayroll[];
+  payrollSummary?: {
+    companyId: string;
+    period: string;
+    total: number;
+    paid: number;
+    accountId: string;
+  }[];
+  samples?: SupplierSample[];
+  demoNotes?: { companyId: string; year: number; title: string }[];
+  financings?: BusinessFinancing[];
+  financingPayments?: FinancingPayment[];
+  posConfigs?: PosConfig[];
+  posSessions?: PosSession[];
+  cashAdjustments?: {
+    id: string;
+    companyId: string;
+    accountId: string;
+    amount: number;
+    reason: string;
+    date: string;
+  }[];
 }
 export interface BusinessSnapshot {
+  hrAccess?: boolean;
+  hrCompanyIds?: string[];
   version: number;
   state: BusinessState;
   holdingOwner: boolean;
@@ -175,4 +225,200 @@ export interface ReplenishmentSuggestion {
   available: number;
   confidence: "LOW" | "MEDIUM";
   explanation: string;
+}
+
+export interface PosConfig {
+  id: string;
+  companyId: string;
+  locationId: string;
+  cashAccountId: string;
+  cardAccountId: string;
+  customerId: string;
+  maxDiscountBps: number;
+}
+export interface PosSession {
+  id: string;
+  companyId: string;
+  locationId: string;
+  userId: string;
+  cashAccountId: string;
+  opening: number;
+  openedAt: string;
+  closedAt?: string;
+  counted?: number;
+  expected?: number;
+  variance?: number;
+  reason?: string;
+  reconciledAt?: string;
+}
+export interface PosSnapshot {
+  version: number;
+  userId: string;
+  stores: {
+    id: string;
+    companyId: string;
+    name: string;
+    companyName: string;
+    currency: string;
+    canManage: boolean;
+    canReconcile: boolean;
+    configured: boolean;
+    maxDiscountBps: number;
+  }[];
+  products: {
+    id: string;
+    companyId: string;
+    sku: string;
+    name: string;
+    size: string;
+    color: string;
+    barcode: string;
+    price: number;
+  }[];
+  customers: {
+    id: string;
+    companyId: string;
+    name: string;
+    email: string;
+    phone: string;
+  }[];
+  availability: {
+    productId: string;
+    locationId: string;
+    locationName: string;
+    quantity: number;
+  }[];
+  sessions: PosSession[];
+  tickets: {
+    id: string;
+    companyId: string;
+    locationId: string;
+    reference: string;
+    customerId: string;
+    date: string;
+    total: number;
+    returned: boolean;
+    lines: BusinessLine[];
+    tenders: { method: "CASH" | "CARD"; amount: number }[];
+  }[];
+}
+
+export interface BusinessFinancing {
+  id: string;
+  companyId: string;
+  reference: string;
+  bank: string;
+  accountId: string;
+  orderId?: string;
+  principal: number;
+  interest: number;
+  dueDate: string;
+  createdAt: string;
+  drawnAt?: string;
+}
+export interface FinancingPayment {
+  id: string;
+  companyId: string;
+  financingId: string;
+  accountId: string;
+  principal: number;
+  interest: number;
+  date: string;
+}
+
+export interface BusinessEmployee {
+  id: string;
+  companyId: string;
+  fullName: string;
+  jobTitle: string;
+  department: string;
+  locationId?: string;
+  grossSalary: number;
+  employerChargesBps: number;
+  hiredAt: string;
+  status: "ACTIVE" | "INACTIVE";
+}
+export interface BusinessPayroll {
+  id: string;
+  companyId: string;
+  employeeId: string;
+  period: string;
+  gross: number;
+  employerCharges: number;
+  total: number;
+  createdAt: string;
+  paidAt?: string;
+  accountId?: string;
+}
+export interface SupplierSample {
+  id: string;
+  companyId: string;
+  supplierId: string;
+  model: string;
+  reference: string;
+  photoUrl: string;
+  unitCost: number;
+  minimumQuantity: number;
+  leadDays: number;
+  status: "PROPOSED" | "APPROVED";
+  createdAt: string;
+}
+
+export interface PurchaseReceipt {
+  id: string;
+  companyId: string;
+  orderId: string;
+  reference: string;
+  lines: { productId: string; quantity: number }[];
+  landedCharges: number;
+  invoiceId?: string;
+  date: string;
+}
+export interface StockTransfer {
+  id: string;
+  companyId: string;
+  reference: string;
+  fromId: string;
+  toId: string;
+  lines: { productId: string; quantity: number; unitCost: number }[];
+  status: "IN_TRANSIT" | "RECEIVED";
+  date: string;
+  receivedAt?: string;
+}
+export interface IntercompanyCharge {
+  id: string;
+  companyId: string;
+  toCompanyId: string;
+  reference: string;
+  description: string;
+  amount: number;
+  date: string;
+  receivableId: string;
+  payableId: string;
+}
+
+export interface CustomerOrder {
+  id: string;
+  companyId: string;
+  reference: string;
+  customerId: string;
+  locationId: string;
+  lines: BusinessLine[];
+  dueDate: string;
+  createdAt: string;
+  status:
+    "DRAFT" | "CONFIRMED" | "PARTIALLY_DELIVERED" | "DELIVERED" | "CANCELLED";
+  confirmedAt?: string;
+  cancelledAt?: string;
+  cancellationReason?: string;
+}
+export interface CustomerDelivery {
+  id: string;
+  companyId: string;
+  orderId: string;
+  reference: string;
+  lines: { productId: string; quantity: number }[];
+  saleId: string;
+  invoiceId: string;
+  date: string;
 }

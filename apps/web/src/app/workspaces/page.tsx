@@ -1,16 +1,21 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import Link from 'next/link';
-import { ArrowRight, Building2, LogOut, Plus } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
-import { EmptyState, ErrorState } from '@/components/ui/states';
-import { CreateWorkspaceDialog } from '@/components/create-workspace-dialog';
-import { LAST_TENANT_KEY, useAuth, useRequireAuth, useWorkspaces } from '@/lib/auth';
-import { initials } from '@/lib/utils';
+import { useState } from "react";
+import Link from "next/link";
+import { ArrowRight, Building2, LogOut, Plus } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState, ErrorState } from "@/components/ui/states";
+import { CreateWorkspaceDialog } from "@/components/create-workspace-dialog";
+import {
+  LAST_TENANT_KEY,
+  useAuth,
+  useRequireAuth,
+  useWorkspaces,
+} from "@/lib/auth";
+import { initials } from "@/lib/utils";
 
 export default function WorkspacesPage() {
   const ready = useRequireAuth();
@@ -24,9 +29,12 @@ export default function WorkspacesPage() {
     <main className="mx-auto min-h-screen max-w-3xl px-4 py-10">
       <header className="mb-8 flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Vos organisations</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Vos organisations
+          </h1>
           <p className="mt-1 text-sm text-muted">
-            Connecté en tant que <span className="font-medium text-fg">{user?.email}</span>
+            Connecté en tant que{" "}
+            <span className="font-medium text-fg">{user?.email}</span>
             {user?.isPlatformAdmin && (
               <Badge tone="accent" className="ml-2">
                 Admin plateforme
@@ -35,8 +43,12 @@ export default function WorkspacesPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Link href="/administration">
+            <Button variant="secondary">Administration</Button>
+          </Link>
           <Button variant="ghost" onClick={logout}>
-            <LogOut className="h-4 w-4" /> <span className="hidden sm:inline">Déconnexion</span>
+            <LogOut className="h-4 w-4" />{" "}
+            <span className="hidden sm:inline">Déconnexion</span>
           </Button>
           <Button onClick={() => setCreating(true)}>
             <Plus className="h-4 w-4" /> Nouvelle
@@ -73,7 +85,9 @@ export default function WorkspacesPage() {
             <li key={w.tenantId}>
               <Link
                 href={`/t/${w.tenantId}`}
-                onClick={() => window.localStorage.setItem(LAST_TENANT_KEY, w.tenantId)}
+                onClick={() =>
+                  window.localStorage.setItem(LAST_TENANT_KEY, w.tenantId)
+                }
                 className="group flex items-center gap-4 rounded-xl border border-border bg-surface p-4 shadow-sm transition hover:border-accent"
               >
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-sm font-semibold">
@@ -81,13 +95,17 @@ export default function WorkspacesPage() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium">{w.name}</p>
-                  <p className="truncate font-mono text-xs text-muted">{w.slug}</p>
+                  <p className="truncate font-mono text-xs text-muted">
+                    {w.slug}
+                  </p>
                 </div>
                 <div className="hidden flex-wrap justify-end gap-1 sm:flex">
                   {w.roles.map((r) => (
                     <Badge key={r}>{r}</Badge>
                   ))}
-                  {w.tenantStatus !== 'ACTIVE' && <Badge tone="warning">{w.tenantStatus}</Badge>}
+                  {w.tenantStatus !== "ACTIVE" && (
+                    <Badge tone="warning">{w.tenantStatus}</Badge>
+                  )}
                 </div>
                 <ArrowRight className="h-4 w-4 text-muted transition group-hover:translate-x-0.5 group-hover:text-fg" />
               </Link>
@@ -96,7 +114,10 @@ export default function WorkspacesPage() {
         </ul>
       )}
 
-      <CreateWorkspaceDialog open={creating} onClose={() => setCreating(false)} />
+      <CreateWorkspaceDialog
+        open={creating}
+        onClose={() => setCreating(false)}
+      />
     </main>
   );
 }

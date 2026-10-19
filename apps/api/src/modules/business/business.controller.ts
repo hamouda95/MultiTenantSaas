@@ -13,6 +13,18 @@ export class BusinessController {
   @Get() snapshot(@CurrentTenant() tenant: TenantContext) {
     return this.business.snapshot(tenant);
   }
+  @Get("version") version(@CurrentTenant() tenant: TenantContext) {
+    return this.business.version(tenant);
+  }
+  @Get("pos") pos(@CurrentTenant() tenant: TenantContext) {
+    return this.business.pos(tenant);
+  }
+  @Post("pos/commands") posCommand(
+    @CurrentTenant() tenant: TenantContext,
+    @Body(new ZodValidationPipe(BusinessCommandSchema)) body: BusinessCommand,
+  ) {
+    return this.business.execute(tenant, body, true);
+  }
   @Post("commands") execute(
     @CurrentTenant() tenant: TenantContext,
     @Body(new ZodValidationPipe(BusinessCommandSchema)) body: BusinessCommand,
