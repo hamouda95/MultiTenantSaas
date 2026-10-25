@@ -5,13 +5,25 @@ const fs = require("node:fs");
 const { randomUUID } = require("node:crypto");
 let failurePage;
 (async () => {
-  const browser = await chromium.launch({ headless: true });
+  const cameraFile = "/tmp/saas-camera.y4m";
+  require("./camera-fixture.cjs")(cameraFile, "POS-42");
+  const browser = await chromium.launch({
+    headless: true,
+    args: [
+      "--use-fake-ui-for-media-stream",
+      "--use-fake-device-for-media-stream",
+      `--use-file-for-fake-video-capture=${cameraFile}`,
+    ],
+  });
   const context = await browser.newContext({
     baseURL: "http://localhost:3000",
     viewport: { width: 1440, height: 1000 },
+    permissions: ["camera"],
   });
   const page = await context.newPage();
   failurePage = page;
+  const allSpaces = async () =>
+    page.getByLabel("Département ERP", { exact: true }).selectOption("tous");
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   const headers = { Origin: "http://localhost:3000" };
@@ -34,10 +46,11 @@ let failurePage;
     slug: `browser-${suffix}`,
   });
   const tenantId = holding.tenant.id;
-  await page.goto(`/t/${tenantId}`);
+  await page.goto(`/t/${tenantId}/business`);
   await page
     .getByRole("heading", { name: "Gestion du holding", exact: true })
     .waitFor();
+  await allSpaces();
   await page
     .getByRole("button", { name: "Sociétés & configuration", exact: true })
     .click();
@@ -79,6 +92,7 @@ let failurePage;
   await cmd({
     type: "product.create",
     name: "Leather shoes",
+    model: "T9800",
     sku: "SHOE-42-BLACK",
     brand: "Polaris",
     size: "42",
@@ -205,6 +219,7 @@ let failurePage;
   await page.getByRole("cell", { name: "Encaissement", exact: true }).waitFor();
   await page.getByRole("button", { name: "Vue holding", exact: true }).click();
   fs.mkdirSync("test-results", { recursive: true });
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
     path: "test-results/holding-desktop.png",
     fullPage: true,
@@ -217,6 +232,7 @@ let failurePage;
     false,
     "Mobile page overflows viewport",
   );
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
     path: "test-results/holding-mobile.png",
     fullPage: true,
@@ -225,6 +241,7 @@ let failurePage;
   await page
     .getByRole("heading", { name: "Gestion du holding", exact: true })
     .waitFor();
+  await allSpaces();
   response = await context.request.get(`/api/v1/tenants/${tenantId}/business`);
   snap = await response.json();
   assert.equal(snap.state.sales.length, 1);
@@ -235,6 +252,700 @@ let failurePage;
       .reduce((n, m) => n + m.quantity, 0),
     95,
   );
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page
+    .getByRole("combobox", { name: "Société", exact: true })
+    .selectOption(companyId);
+  await page
+    .getByRole("button", { name: "Achats & imports", exact: true })
+    .click();
+  const funding = page.locator("form").filter({
+    has: page.getByRole("button", {
+      name: "Enregistrer le financement",
+      exact: true,
+    }),
+  });
+  await funding
+    .getByLabel("Référence financement", { exact: true })
+    .fill("LOAN-BROWSER");
+  await funding.getByLabel("Banque prêteuse", { exact: true }).fill("Bank A");
+  await funding
+    .getByLabel("Capital financé (TND)", { exact: true })
+    .fill("100");
+  await funding
+    .getByLabel("Intérêts et frais convenus (TND)", { exact: true })
+    .fill("10");
+  await funding
+    .getByLabel("Échéance finale du crédit", { exact: true })
+    .fill(new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10));
+  await funding
+    .getByRole("button", { name: "Enregistrer le financement", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Confirmer le déblocage", exact: true })
+    .click();
+  await page.getByText("En remboursement", { exact: true }).waitFor();
+  response = await context.request.get(`/api/v1/tenants/${tenantId}/business`);
+  snap = await response.json();
+  const loanId = snap.state.financings[0].id;
+  const repayment = page.locator("form").filter({
+    has: page.getByRole("button", {
+      name: "Enregistrer le remboursement",
+      exact: true,
+    }),
+  });
+  await repayment
+    .getByLabel("Crédit à rembourser", { exact: true })
+    .selectOption(loanId);
+  await repayment
+    .getByLabel("Capital remboursé (TND)", { exact: true })
+    .fill("40");
+  await repayment.getByLabel("Intérêts payés (TND)", { exact: true }).fill("2");
+  await repayment
+    .getByRole("button", { name: "Enregistrer le remboursement", exact: true })
+    .click();
+  await page.getByText(/Capital 40,000/).waitFor();
+  const article = page.locator("form").filter({
+    has: page.getByRole("button", { name: "Créer l’article", exact: true }),
+  });
+  await article
+    .getByLabel("Code modèle (ex. T9800)", { exact: true })
+    .fill("T9800");
+  await article
+    .getByLabel("SKU de la variante", { exact: true })
+    .fill("T9800-GREEN");
+  await article
+    .getByLabel("Désignation de l’article", { exact: true })
+    .fill("Leather shoes");
+  await article
+    .getByLabel("Couleur de l’article", { exact: true })
+    .fill("Green");
+  await article
+    .getByRole("button", { name: "Créer l’article", exact: true })
+    .click();
+  await article.getByLabel("SKU de la variante", { exact: true }).waitFor();
+  // Wait for successful creation/reset before the following authoritative snapshot.
+  await page.waitForFunction(
+    () => document.querySelector('input[name="sku"]').value === "",
+  );
+  response = await context.request.get(`/api/v1/tenants/${tenantId}/business`);
+  snap = await response.json();
+  await cmd({
+    type: "stock.adjust",
+    productId: snap.state.products.at(-1).id,
+    locationId: storeId,
+    quantity: 2,
+    unitCost: 1000,
+    reason: "Opening browser variant",
+  });
+  for (const color of ["White", "Red", "Blue"]) {
+    await cmd({
+      type: "product.create",
+      model: "T9800",
+      name: "Leather shoes",
+      sku: `T9800-${color}`,
+      brand: "Polaris",
+      size: "42",
+      color,
+    });
+    await cmd({
+      type: "stock.adjust",
+      productId: snap.state.products.at(-1).id,
+      locationId: storeId,
+      quantity: 2,
+      unitCost: 1000,
+      reason: "Opening browser variant",
+    });
+  }
+  await page
+    .getByRole("button", { name: "Stocks & transferts", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Actualiser", exact: true }).click();
+  await page
+    .getByRole("img", { name: /Répartition du stock T9800.*Total 103/ })
+    .waitFor();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({
+    path: "test-results/inventory-colours.png",
+    fullPage: true,
+  });
+  await cmd({
+    type: "account.create",
+    name: "POS Till",
+    kind: "CASH",
+    opening: 0,
+    asOf: new Date().toISOString().slice(0, 10),
+  });
+  const cashAccountId = snap.state.accounts.at(-1).id;
+  await cmd({
+    type: "product.pricing",
+    productId,
+    salePrice: 2000,
+    barcode: "POS-42",
+  });
+  await cmd({
+    type: "pos.configure",
+    locationId: storeId,
+    cashAccountId,
+    cardAccountId: snap.state.accounts[0].id,
+    customerId: snap.state.partners[1].id,
+    maxDiscountBps: 0,
+  });
+  await page.goto(`/t/${tenantId}/pos`);
+  await page.getByRole("heading", { name: "Caisse", exact: true }).waitFor();
+  await page.getByLabel("Fond de caisse", { exact: true }).fill("0");
+  await page
+    .getByRole("button", { name: "Ouvrir la session", exact: true })
+    .click();
+  await page.getByText("Nouveau client", { exact: true }).click();
+  await page
+    .getByLabel("Nom du nouveau client", { exact: true })
+    .fill("Amira Browser");
+  await page
+    .getByLabel("Téléphone du nouveau client", { exact: true })
+    .fill("+21612345678");
+  await page
+    .getByRole("button", { name: "Créer le client en Caisse", exact: true })
+    .click();
+  await page
+    .getByRole("option", { name: /Amira Browser/ })
+    .waitFor({ state: "attached" });
+  await page
+    .getByLabel("Client de la vente", { exact: true })
+    .selectOption({ label: "Amira Browser · +21612345678" });
+  await page
+    .getByRole("button", { name: "Scanner avec la caméra", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Retirer une unité", exact: true })
+    .waitFor({ timeout: 30000 });
+  await page
+    .getByRole("button", { name: "Retirer une unité", exact: true })
+    .click();
+  const scan = page.getByLabel(
+    "Scanner un code-barres ou rechercher un article",
+    { exact: true },
+  );
+  await scan.fill("POS-42");
+  await scan.press("Enter");
+  await page
+    .getByRole("button", { name: "Retirer une unité", exact: true })
+    .waitFor();
+  await page
+    .getByRole("button", {
+      name: "Valider la vente et le règlement",
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("button", { name: "Voir le ticket", exact: true })
+    .waitFor();
+  await page
+    .getByRole("button", { name: "Voir le ticket", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Imprimer le ticket", exact: true })
+    .waitFor();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({
+    path: "test-results/pos-desktop.png",
+    fullPage: true,
+  });
+  await page.getByLabel("Espèces comptées", { exact: true }).fill("2");
+  await page
+    .getByLabel("Commentaire de clôture", { exact: true })
+    .fill("Balanced browser closing");
+  await page
+    .getByRole("button", { name: "Clôturer la Caisse", exact: true })
+    .click();
+  await page.getByText("Rapprochée", { exact: false }).waitFor();
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth > innerWidth,
+    ),
+    false,
+  );
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({
+    path: "test-results/pos-mobile.png",
+    fullPage: true,
+  });
+  await page
+    .getByLabel("Rechercher dans les ventes", { exact: true })
+    .fill("Amira Browser");
+  await page
+    .getByRole("button", { name: "Voir le ticket", exact: true })
+    .waitFor();
+  response = await context.request.get(`/api/v1/tenants/${tenantId}/business`);
+  snap = await response.json();
+  assert.equal(snap.state.financingPayments[0].principal, 40000);
+  assert.equal(
+    snap.state.sales.at(-1).customerId,
+    snap.state.partners.find((p) => p.name === "Amira Browser").id,
+  );
+  assert.equal(
+    snap.state.movements
+      .filter((m) => m.productId === productId)
+      .reduce((n, m) => n + m.quantity, 0),
+    94,
+  );
+  // New modules: real employee accrual/payment and supplier sample → purchase draft.
+  await page.goto(`/t/${tenantId}/business`);
+  await allSpaces();
+  await page.getByLabel("Société", { exact: true }).selectOption(companyId);
+  await page
+    .getByRole("button", { name: "Ressources humaines", exact: true })
+    .click();
+  await page.getByLabel("Nom complet", { exact: true }).fill("Salarié Browser");
+  await page.getByLabel("Poste", { exact: true }).fill("Vendeur");
+  await page.getByLabel("Département", { exact: true }).fill("Ventes");
+  await page.getByLabel("Salaire brut (TND)", { exact: true }).fill("500");
+  await page.getByLabel("Date d’entrée", { exact: true }).fill("2025-01-01");
+  await page
+    .getByRole("button", { name: "Ajouter un salarié", exact: true })
+    .click();
+  await page.getByRole("cell", { name: /Salarié Browser/ }).waitFor();
+  await page
+    .getByRole("button", { name: "Comptabiliser", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Régler", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Régler", exact: true }).click();
+  await page.getByText(/590.*Réglé/).waitFor();
+  await page.screenshot({
+    path: "test-results/hr-desktop.png",
+    fullPage: true,
+  });
+  response = await context.request.get(`/api/v1/tenants/${tenantId}/business`);
+  snap = await response.json();
+  assert.equal(snap.state.payroll[0].total, 590000);
+  assert(snap.state.payroll[0].paidAt);
+  await cmd({
+    type: "product.create",
+    sku: "SAMPLE-NEW",
+    name: "Nouveau modèle",
+    model: "DEMO2027",
+    brand: "Polaris",
+    size: "42",
+    color: "Noir",
+  });
+  await cmd({
+    type: "sample.create",
+    supplierId: snap.state.partners.find((p) => p.kind === "SUPPLIER").id,
+    model: "DEMO2027",
+    reference: "SAMPLE-BROWSER",
+    photoUrl: "/demo/supplier-samples.png",
+    unitCost: 50000,
+    minimumQuantity: 100,
+    leadDays: 30,
+  });
+  await page.reload();
+  await allSpaces();
+  await page.getByLabel("Société", { exact: true }).selectOption(companyId);
+  await page
+    .getByRole("button", { name: "Échantillons & commandes", exact: true })
+    .click();
+  const samplePhoto = page.getByRole("img", {
+    name: "Échantillon fournisseur DEMO2027",
+    exact: true,
+  });
+  await samplePhoto.waitFor();
+  await samplePhoto.scrollIntoViewIfNeeded();
+  await page.waitForFunction(() => {
+    const img = document.querySelector(
+      'img[alt="Échantillon fournisseur DEMO2027"]',
+    );
+    return img && img.complete && img.naturalWidth > 0;
+  });
+  assert(
+    await samplePhoto.evaluate((img) => img.complete && img.naturalWidth > 0),
+  );
+  await page
+    .getByRole("button", { name: "Approuver l’échantillon", exact: true })
+    .click();
+  await page.getByText("Échantillon approuvé", { exact: false }).waitFor();
+  await page
+    .getByRole("button", {
+      name: "Préparer un brouillon de commande",
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("status")
+    .filter({ hasText: "Opération enregistrée." })
+    .waitFor();
+  response = await context.request.get(`/api/v1/tenants/${tenantId}/business`);
+  snap = await response.json();
+  assert(
+    snap.state.orders.some(
+      (o) =>
+        o.reference.startsWith("ECH-SAMPLE-BROWSER-") &&
+        o.status === "DRAFT" &&
+        o.lines[0].quantity === 100,
+    ),
+  );
+  await page.screenshot({
+    path: "test-results/supplier-samples-desktop.png",
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "P&L annuel", exact: true }).click();
+  await page
+    .getByRole("heading", { name: "P&L annuel du holding", exact: true })
+    .waitFor();
+  const pnlDownload = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Exporter CSV", exact: true }).click();
+  assert((await pnlDownload).suggestedFilename().startsWith("pnl-"));
+  await page.screenshot({
+    path: "test-results/pnl-desktop.png",
+    fullPage: true,
+  });
+  await page.goto(`/t/${tenantId}/hr`);
+  await page
+    .getByRole("heading", { name: "Contrats & congés", exact: true })
+    .waitFor();
+  await page.getByText(/Salarié Browser — depuis/).waitFor();
+  const leaveForm = page.locator("form").filter({
+    has: page.getByRole("button", { name: "Demander un congé", exact: true }),
+  });
+  await leaveForm.getByLabel("Du", { exact: true }).fill("2026-11-01");
+  await leaveForm.getByLabel("Au", { exact: true }).fill("2026-11-03");
+  await leaveForm
+    .getByRole("button", { name: "Demander un congé", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Approuver", exact: true }).click();
+  await page.getByText(/2026-11-01.*APPROVED/).waitFor();
+  await page.screenshot({
+    path: "test-results/hr-contracts-leave.png",
+    fullPage: true,
+  });
+  // ERP: partial receipt, shipment/confirmation and group elimination use the real UI.
+  response = await context.request.get(`/api/v1/tenants/${tenantId}/business`);
+  snap = await response.json();
+  snap = await api(`/api/v1/tenants/${tenantId}/business/commands`, {
+    commandId: randomUUID(),
+    version: snap.version,
+    action: {
+      type: "company.create",
+      data: {
+        name: "ERP Services",
+        currency: "TND",
+        country: "Tunisie",
+        brands: [],
+        leadDays: 10,
+        coverDays: 30,
+        minimumStock: 2,
+        modules: ["finance"],
+      },
+    },
+  });
+  const otherCompany = snap.state.companies.at(-1).id;
+  await cmd({
+    type: "account.create",
+    companyId: otherCompany,
+    name: "ERP Group Bank",
+    kind: "BANK",
+    opening: 2000000,
+    asOf: "2025-01-01",
+  });
+  await cmd({
+    type: "order.create",
+    reference: "ERP-PART-BROWSER",
+    supplierId: snap.state.partners.find((p) => p.kind === "SUPPLIER").id,
+    locationId: warehouseId,
+    origin: "Istanbul",
+    eta: "2026-10-18",
+    dueDate: "2026-11-01",
+    landedCharges: 1000,
+    lines: [{ productId, quantity: 10, unitPrice: 1000 }],
+  });
+  const partialOrder = snap.state.orders.at(-1).id;
+  for (const status of ["APPROVED", "ORDERED", "SHIPPED", "CUSTOMS"])
+    await cmd({ type: "order.transition", orderId: partialOrder, status });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto(`/t/${tenantId}/business`);
+  await allSpaces();
+  await page.getByLabel("Société", { exact: true }).selectOption(companyId);
+  await page
+    .getByRole("button", { name: "Réceptions fournisseurs", exact: true })
+    .click();
+  await page
+    .getByLabel("Commande à réceptionner", { exact: true })
+    .selectOption(partialOrder);
+  await page
+    .getByLabel("Référence du bon de réception", { exact: true })
+    .fill("BR-PART-BROWSER");
+  await page
+    .getByLabel("Quantité reçue SHOE-42-BLACK", { exact: true })
+    .fill("4");
+  await page
+    .getByRole("button", {
+      name: "Valider la réception partielle",
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("rowheader", { name: "BR-PART-BROWSER", exact: true })
+    .waitFor();
+  response = await context.request.get(`/api/v1/tenants/${tenantId}/business`);
+  snap = await response.json();
+  assert.equal(
+    snap.state.orders.find((o) => o.id === partialOrder).status,
+    "PARTIALLY_RECEIVED",
+  );
+  const storeBefore = snap.state.movements
+    .filter((m) => m.productId === productId && m.locationId === storeId)
+    .reduce((n, m) => n + m.quantity, 0);
+  await page.screenshot({
+    path: "test-results/erp-receiving-desktop.png",
+    fullPage: true,
+  });
+  await page
+    .getByRole("button", { name: "Transferts suivis", exact: true })
+    .click();
+  await page
+    .getByLabel("Référence transfert", { exact: true })
+    .fill("TR-BROWSER");
+  await page
+    .getByLabel("Origine du transfert suivi", { exact: true })
+    .selectOption(warehouseId);
+  await page
+    .getByLabel("Destination du transfert suivi", { exact: true })
+    .selectOption(storeId);
+  await page
+    .getByLabel("Variante du transfert suivi", { exact: true })
+    .selectOption(productId);
+  await page.getByLabel("Quantité à expédier", { exact: true }).fill("2");
+  await page
+    .getByRole("button", { name: "Confirmer l’expédition", exact: true })
+    .click();
+  await page.getByRole("cell", { name: "En transit", exact: true }).waitFor();
+  await page.screenshot({
+    path: "test-results/erp-transit-desktop.png",
+    fullPage: true,
+  });
+  await page
+    .getByRole("button", { name: "Confirmer la réception", exact: true })
+    .click();
+  await page.getByRole("cell", { name: /^Reçu le/ }).waitFor();
+  response = await context.request.get(`/api/v1/tenants/${tenantId}/business`);
+  snap = await response.json();
+  assert.equal(
+    snap.state.movements
+      .filter((m) => m.productId === productId && m.locationId === storeId)
+      .reduce((n, m) => n + m.quantity, 0),
+    storeBefore + 2,
+  );
+  await page.getByRole("button", { name: "Intragroupe", exact: true }).click();
+  await page
+    .getByLabel("Société émettrice", { exact: true })
+    .selectOption(companyId);
+  await page
+    .getByLabel("Société bénéficiaire", { exact: true })
+    .selectOption(otherCompany);
+  await page
+    .getByLabel("Référence de prestation", { exact: true })
+    .fill("IC-ERP-BROWSER");
+  await page
+    .getByLabel("Description de la prestation", { exact: true })
+    .fill("Logistique partagée");
+  await page
+    .getByLabel("Montant de prestation (TND)", { exact: true })
+    .fill("100");
+  await page
+    .getByRole("button", {
+      name: "Enregistrer la prestation interne",
+      exact: true,
+    })
+    .click();
+  await page.getByRole("heading", { name: /IC-ERP-BROWSER/ }).waitFor();
+  await page
+    .getByLabel("Montant du règlement interne", { exact: true })
+    .fill("20");
+  await page
+    .getByRole("button", { name: "Régler les deux sociétés", exact: true })
+    .click();
+  await page.getByText(/Reste à régler : 80,000/).waitFor();
+  await page.getByLabel("Société", { exact: true }).selectOption("");
+  await page
+    .getByRole("button", { name: "Pilotage groupe", exact: true })
+    .click();
+  await page
+    .getByRole("heading", {
+      name: "Pilotage & consolidation du groupe",
+      exact: true,
+    })
+    .waitFor();
+  assert.match(
+    await page
+      .getByText("CA consolidé · période", { exact: true })
+      .locator("..")
+      .innerText(),
+    /12,000/,
+  );
+  await page.screenshot({
+    path: "test-results/erp-group-desktop.png",
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth > innerWidth,
+    ),
+    false,
+  );
+  await page.screenshot({
+    path: "test-results/erp-group-mobile.png",
+    fullPage: true,
+  });
+  // Customer order: create/reserve/partially deliver/cancel remainder through actual UI.
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto(`/t/${tenantId}/business`);
+  await allSpaces();
+  await page.getByLabel("Société", { exact: true }).selectOption(companyId);
+  await page
+    .getByRole("button", { name: "Commandes clients", exact: true })
+    .click();
+  await page
+    .getByLabel("Référence commande client", { exact: true })
+    .fill("CO-BROWSER");
+  await page
+    .getByLabel("Emplacement de préparation", { exact: true })
+    .selectOption(warehouseId);
+  await page
+    .getByLabel("Article commande 1", { exact: true })
+    .selectOption(productId);
+  await page.getByLabel("Quantité commande 1", { exact: true }).fill("3");
+  await page.getByLabel("Prix commande 1", { exact: true }).fill("2");
+  await page
+    .getByLabel("Échéance de paiement", { exact: true })
+    .fill("2026-11-01");
+  await page
+    .getByRole("button", { name: "Créer le brouillon client", exact: true })
+    .click();
+  await page
+    .getByRole("heading", { name: "CO-BROWSER · Brouillon", exact: true })
+    .waitFor();
+  await page
+    .getByRole("button", { name: "Confirmer et réserver", exact: true })
+    .click();
+  await page
+    .getByRole("heading", { name: "CO-BROWSER · Réservée", exact: true })
+    .waitFor();
+  await page
+    .getByLabel("Référence bon de livraison", { exact: true })
+    .fill("DELIVERY-BROWSER");
+  await page.getByLabel("À livrer SHOE-42-BLACK", { exact: true }).fill("1");
+  await page
+    .getByRole("button", { name: "Valider la livraison", exact: true })
+    .click();
+  await page
+    .getByRole("heading", {
+      name: "CO-BROWSER · Partiellement livrée",
+      exact: true,
+    })
+    .waitFor();
+  response = await context.request.get(`/api/v1/tenants/${tenantId}/business`);
+  snap = await response.json();
+  assert.equal(
+    snap.state.invoices.find((i) => i.reference === "SALE:BL:DELIVERY-BROWSER")
+      .amount,
+    2000,
+  );
+  await page.screenshot({
+    path: "test-results/customer-orders-desktop.png",
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth > innerWidth,
+    ),
+    false,
+  );
+  await page.screenshot({
+    path: "test-results/customer-orders-mobile.png",
+    fullPage: true,
+  });
+  await page
+    .getByLabel("Motif annulation CO-BROWSER", { exact: true })
+    .fill("Customer cancelled remainder");
+  await page
+    .getByRole("button", { name: "Annuler le reliquat", exact: true })
+    .click();
+  await page
+    .getByLabel("Afficher les commandes", { exact: true })
+    .selectOption("ALL");
+  await page
+    .getByRole("heading", { name: "CO-BROWSER · Annulée", exact: true })
+    .waitFor();
+  // Department directory: shared tasks remain reachable with a unique all-departments entry.
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await allSpaces();
+  const departments = page.getByRole("navigation", {
+    name: "Départements et grandes tâches",
+    exact: true,
+  });
+  await departments
+    .getByRole("heading", { name: "Service achats", exact: true })
+    .waitFor();
+  await departments
+    .getByRole("heading", { name: "Ventes & magasins", exact: true })
+    .waitFor();
+  assert.equal(
+    await departments
+      .getByRole("button", { name: "Commandes clients", exact: true })
+      .count(),
+    1,
+  );
+  await page.screenshot({
+    path: "test-results/departments-desktop.png",
+    fullPage: true,
+  });
+  await page
+    .getByLabel("Département ERP", { exact: true })
+    .selectOption("finance");
+  await departments
+    .getByRole("heading", { name: "Finance & trésorerie", exact: true })
+    .waitFor();
+  assert.equal(
+    await departments
+      .getByRole("heading", { name: "Service achats", exact: true })
+      .count(),
+    0,
+  );
+  await departments
+    .getByRole("button", { name: "Commandes clients", exact: true })
+    .click();
+  await page
+    .getByRole("heading", {
+      name: "Commandes clients & livraisons",
+      exact: true,
+    })
+    .waitFor();
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth > innerWidth,
+    ),
+    false,
+  );
+  await page.screenshot({
+    path: "test-results/departments-mobile.png",
+    fullPage: true,
+  });
+  await page.goto("/administration");
+  await page
+    .getByRole("heading", { name: "Administration des holdings", exact: true })
+    .waitFor();
+  const downloadPromise = page.waitForEvent("download");
+  await page
+    .getByRole("button", {
+      name: "Exporter toutes les données métier",
+      exact: true,
+    })
+    .click();
+  const download = await downloadPromise;
+  assert(download.suggestedFilename().endsWith(".json"));
   assert.deepEqual(errors, []);
   await browser.close();
   console.log(

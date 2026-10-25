@@ -1,6 +1,7 @@
 "use client";
 import {
   useRef,
+  useEffect,
   useState,
   useId,
   cloneElement,
@@ -20,6 +21,7 @@ import {
   Sparkles,
   RefreshCw,
   Download,
+  Users,
 } from "lucide-react";
 import {
   accountBalance,
@@ -27,9 +29,27 @@ import {
   currencyDigits,
   invoicePaid,
   productStock,
+  reservedStock,
+  availableStock,
   replenishment,
 } from "@saas/types";
 import type { BusinessState, BusinessCompany, BusinessLine } from "@saas/types";
+import { GroupDashboard } from "@/components/business/group-dashboard";
+import { IntercompanyPanel } from "@/components/business/intercompany-panel";
+import { ReceivingPanel } from "@/components/business/receiving-panel";
+import { CustomerOrders } from "@/components/business/customer-orders";
+import { TransferPanel } from "@/components/business/transfer-panel";
+import { AnnualPnl } from "@/components/business/annual-pnl";
+import { HrPanel } from "@/components/business/hr-panel";
+import { SupplierSamples } from "@/components/business/supplier-samples";
+import { InventoryAnalysis } from "@/components/business/inventory-analysis";
+import { PartnerDirectory } from "@/components/business/partner-directory";
+import {
+  ArticleCreator,
+  FinancingPanel,
+} from "@/components/business/purchasing-tools";
+import Link from "next/link";
+import { versionedQuery } from "@/lib/versioned-query";
 import { api, ApiError } from "@/lib/api";
 import { PageHeader } from "@/components/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,13 +58,21 @@ import { Input } from "@/components/ui/input";
 import { ErrorState } from "@/components/ui/states";
 
 const today = () => new Date().toISOString().slice(0, 10);
-const modules = ["purchasing", "inventory", "sales", "finance", "intelligence"];
+const modules = [
+  "purchasing",
+  "inventory",
+  "sales",
+  "finance",
+  "intelligence",
+  "hr",
+];
 const moduleLabels: Record<string, string> = {
   purchasing: "Achats & import",
   inventory: "Stocks & distribution",
   sales: "Ventes",
   finance: "Trésorerie",
   intelligence: "Recommandations",
+  hr: "Ressources humaines",
 };
 const statusLabels: Record<string, string> = {
   DRAFT: "Brouillon",
@@ -53,17 +81,26 @@ const statusLabels: Record<string, string> = {
   SHIPPED: "Expédiée",
   CUSTOMS: "Douane",
   RECEIVED: "Réceptionnée",
+  PARTIALLY_RECEIVED: "Réception partielle",
   CANCELLED: "Annulée",
 };
 const tabs = [
+  ["group", "Pilotage groupe"],
+  ["receipts", "Réceptions fournisseurs"],
+  ["customerOrders", "Commandes clients"],
+  ["transfers", "Transferts suivis"],
+  ["intercompany", "Intragroupe"],
   ["overview", "Vue holding"],
   ["companies", "Sociétés & configuration"],
   ["catalog", "Catalogue & réseau"],
+  ["samples", "Échantillons & commandes"],
   ["purchasing", "Achats & imports"],
   ["inventory", "Stocks & transferts"],
   ["sales", "Ventes"],
   ["finance", "Banques & trésorerie"],
   ["intelligence", "Intelligence"],
+  ["hr", "Ressources humaines"],
+  ["pnl", "P&L annuel"],
   ["access", "Accès sociétés"],
 ] as const;
 const selectClass =
@@ -489,12 +526,31 @@ function CompanyWizard({
 export default function BusinessPage() {
   const { tenantId } = useParams<{ tenantId: string }>();
   const client = useQueryClient();
+  const busyRef = useRef(false);
   const query = useQuery({
     queryKey: ["business", tenantId],
-    queryFn: () => api.business(tenantId),
+    queryFn: () =>
+      versionedQuery(
+        client,
+        ["business", tenantId],
+        () => api.businessVersion(tenantId),
+        () => api.business(tenantId),
+        () => busyRef.current,
+      ),
+    refetchInterval: busyRef.current ? false : 5000,
     retry: false,
   });
-  const [tab, setTab] = useState("overview");
+  const [tab, setTab] = useState("group");
+  useEffect(() => {
+    const syncView = () => {
+      const view = decodeURIComponent(window.location.hash.slice(1));
+      if (tabs.some(([id]) => id === view)) setTab(view);
+    };
+    syncView();
+    window.addEventListener("hashchange", syncView);
+    return () => window.removeEventListener("hashchange", syncView);
+  }, []);
+  const [profile, setProfile] = useState("tous");
   const [selected, setSelected] = useState("");
   const [warehouse, setWarehouse] = useState("");
   const [busy, setBusy] = useState(false);
@@ -511,6 +567,7 @@ export default function BusinessPage() {
   });
   async function run(action: Record<string, unknown>): Promise<boolean> {
     if (!query.data || busy) return false;
+    busyRef.current = true;
     setBusy(true);
     setError("");
     setNotice("");
@@ -540,6 +597,7 @@ export default function BusinessPage() {
       }
       return false;
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }
@@ -566,9 +624,185 @@ export default function BusinessPage() {
     : s.access.find(
         (a) => a.companyId === company?.id && a.userId === snapshot.userId,
       )?.role;
-  const manage = !!company && role === "MANAGER";
-  const finance = !!company && ["MANAGER", "FINANCE"].includes(role || "");
-  const operate = !!company && ["MANAGER", "OPERATIONS"].includes(role || "");
+  const active = !company?.status || company.status === "ACTIVE";
+  const manage = !!company && active && role === "MANAGER";
+  const finance =
+    !!company && active && ["MANAGER", "FINANCE"].includes(role || "");
+  const operate =
+    !!company && active && ["MANAGER", "OPERATIONS"].includes(role || "");
+  const buying =
+    !!company &&
+    active &&
+    ["MANAGER", "OPERATIONS", "BUYER"].includes(role || "");
+  const warehousing =
+    !!company &&
+    active &&
+    ["MANAGER", "OPERATIONS", "WAREHOUSE"].includes(role || "");
+  const financialIds = s.companies
+    .filter(
+      (c) =>
+        snapshot.holdingOwner ||
+        s.access.some(
+          (g) =>
+            g.companyId === c.id &&
+            g.userId === snapshot.userId &&
+            ["MANAGER", "FINANCE", "VIEWER"].includes(g.role),
+        ),
+    )
+    .map((c) => c.id);
+  const settlementIds = s.companies
+    .filter(
+      (c) =>
+        snapshot.holdingOwner ||
+        s.access.some(
+          (g) =>
+            g.companyId === c.id &&
+            g.userId === snapshot.userId &&
+            ["MANAGER", "FINANCE"].includes(g.role),
+        ),
+    )
+    .map((c) => c.id);
+  const roles = snapshot.holdingOwner
+    ? ["MANAGER"]
+    : s.access
+        .filter(
+          (g) =>
+            g.userId === snapshot.userId &&
+            (!company || g.companyId === company.id),
+        )
+        .map((g) => g.role);
+  const has = (allowed: string[]) => roles.some((r) => allowed.includes(r));
+  const spaces = [
+    {
+      id: "direction",
+      name: "Direction du groupe",
+      views: [
+        "group",
+        "overview",
+        "pnl",
+        ...(has(["MANAGER"]) ? ["companies"] : []),
+        ...(snapshot.holdingOwner ? ["access"] : []),
+      ],
+      allowed: has(["MANAGER", "FINANCE", "VIEWER"]),
+    },
+    {
+      id: "achats",
+      name: "Service achats",
+      views: ["samples", "purchasing", "catalog"],
+      allowed: has(["MANAGER", "OPERATIONS", "BUYER"]),
+    },
+    {
+      id: "logistique",
+      name: "Entrepôts & logistique",
+      views: [
+        "receipts",
+        "customerOrders",
+        "transfers",
+        "inventory",
+        "intelligence",
+        "catalog",
+      ],
+      allowed: has(["MANAGER", "OPERATIONS", "WAREHOUSE"]),
+    },
+    {
+      id: "ventes",
+      name: "Ventes & magasins",
+      views: ["customerOrders", "sales", "inventory", "catalog"],
+      allowed: has(["MANAGER", "OPERATIONS"]),
+    },
+    {
+      id: "finance",
+      name: "Finance & trésorerie",
+      views: [
+        "finance",
+        "customerOrders",
+        "intercompany",
+        "group",
+        "pnl",
+        "purchasing",
+      ],
+      allowed: has(["MANAGER", "FINANCE"]),
+    },
+    {
+      id: "rh",
+      name: "Ressources humaines",
+      views: ["hr"],
+      allowed: !!snapshot.hrAccess && has(["MANAGER", "FINANCE", "HR"]),
+    },
+  ].filter((x) => x.allowed);
+  const activeProfile =
+    profile === "tous"
+      ? "tous"
+      : spaces.some((x) => x.id === profile)
+        ? profile
+        : spaces[0]?.id || "tous";
+  const availableTabs = new Set(
+    (activeProfile === "tous"
+      ? spaces
+      : spaces.filter((x) => x.id === activeProfile)
+    ).flatMap((x) => x.views),
+  );
+  const departmentInfo = {
+    direction: {
+      icon: Building2,
+      description: "Consolider, analyser et administrer le groupe",
+    },
+    achats: {
+      icon: ShoppingCart,
+      description:
+        "Préparer les collections et suivre les commandes fournisseurs",
+    },
+    logistique: {
+      icon: Package,
+      description: "Réceptionner, stocker et distribuer les marchandises",
+    },
+    ventes: {
+      icon: TrendingUp,
+      description: "Gérer les clients, les commandes et les ventes",
+    },
+    finance: {
+      icon: Wallet,
+      description: "Suivre les règlements, les financements et la trésorerie",
+    },
+    rh: {
+      icon: Users,
+      description: "Gérer les équipes et les coûts de personnel",
+    },
+  };
+  // Shared tasks have one primary home in the full directory, but remain reachable
+  // in every authorized department that participates in the workflow.
+  const preferredDepartment: Record<string, string> = {
+    customerOrders: "ventes",
+    inventory: "logistique",
+    catalog: "achats",
+  };
+  const taskDepartment = (id: string) => {
+    const candidates = spaces.filter((x) => x.views.includes(id));
+    return (
+      candidates.find((x) => x.id === preferredDepartment[id])?.id ||
+      candidates[0]?.id
+    );
+  };
+  const navigationDepartments = spaces
+    .filter((x) => activeProfile === "tous" || x.id === activeProfile)
+    .map((x) => ({
+      ...x,
+      tasks: tabs.filter(
+        ([id]) =>
+          x.views.includes(id) &&
+          (activeProfile !== "tous" || taskDepartment(id) === x.id),
+      ),
+    }))
+    .filter((x) => x.tasks.length > 0);
+  const activeTab = availableTabs.has(tab)
+    ? tab
+    : spaces.find((x) => x.id === activeProfile)?.views[0] ||
+      spaces[0]?.views[0] ||
+      "overview";
+  function openView(id: string) {
+    setProfile("tous");
+    setTab(id);
+  }
   const products = rows(s.products),
     locations = rows(s.locations),
     partners = rows(s.partners),
@@ -685,18 +919,170 @@ export default function BusinessPage() {
             : `Accès aux sociétés attribuées uniquement${role ? ` · ${role}` : ""}`}
         </p>
       </div>
-      <nav aria-label="Modules métier" className="mb-6 flex flex-wrap gap-2">
-        {tabs.map(([id, label]) => (
-          <Button
-            key={id}
-            variant={tab === id ? "primary" : "secondary"}
-            size="sm"
-            onClick={() => setTab(id)}
-          >
-            {label}
-          </Button>
-        ))}
-      </nav>
+      {!!s.demoNotes?.length && (
+        <div className="mb-5 rounded-xl border border-brand/30 bg-brand/5 p-4">
+          <h2 className="font-semibold">
+            DÉMONSTRATION — Groupe Horizon · Données fictives
+          </h2>
+          <p className="mt-1 text-sm text-muted">
+            3 sociétés, 10 magasins : sélectionnez Polaris pour suivre un modèle
+            de l’échantillon à la caisse. Les ventes historiques sont des
+            synthèses mensuelles fictives ; les tickets récents illustrent le
+            parcours caisse. Le P&L 2025 est calculé à partir des écritures.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {[
+              ["samples", "1 · Échantillons"],
+              ["purchasing", "2 · Importation"],
+              ["inventory", "3 · Distribution"],
+              ["sales", "4 · Ventes"],
+              ["hr", "5 · RH"],
+              ["pnl", "6 · P&L CEO"],
+            ].map(([id, label]) => (
+              <Button
+                key={id}
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  openView(id);
+                  if (id !== "pnl" && !selected)
+                    setSelected(s.companies[0]?.id || "");
+                  if (id === "pnl") setSelected("");
+                }}
+              >
+                {label}
+              </Button>
+            ))}
+            <Link
+              className="rounded-lg border border-border p-2 text-sm"
+              href={`/t/${tenantId}/pos`}
+            >
+              Ouvrir la caisse
+            </Link>
+          </div>
+        </div>
+      )}
+      <section aria-labelledby="departments-title" className="mb-6 space-y-4">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h2 id="departments-title" className="text-xl font-semibold">
+              Départements de l’ERP
+            </h2>
+            <p className="mt-1 text-sm text-muted">
+              Choisissez un département, puis une grande tâche. Les parcours
+              partagés restent accessibles aux métiers concernés.
+            </p>
+          </div>
+          <label className="w-full text-sm font-medium sm:w-72">
+            Département ERP
+            <select
+              aria-label="Département ERP"
+              className={selectClass}
+              value={activeProfile}
+              onChange={(e) => {
+                const value = e.target.value;
+                setProfile(value);
+                const next =
+                  value === "tous"
+                    ? spaces
+                    : spaces.filter((x) => x.id === value);
+                if (!next.some((x) => x.views.includes(tab)))
+                  setTab(next[0]?.views[0] || "overview");
+              }}
+            >
+              <option value="tous">Tous les départements autorisés</option>
+              {spaces.map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <nav
+          aria-label="Départements et grandes tâches"
+          className="grid gap-4 md:grid-cols-2 xl:grid-cols-3"
+        >
+          {navigationDepartments.map((department) => {
+            const info =
+                departmentInfo[department.id as keyof typeof departmentInfo],
+              Icon = info.icon;
+            const selected = department.tasks.some(([id]) => id === activeTab);
+            return (
+              <section
+                key={department.id}
+                aria-labelledby={`department-${department.id}`}
+                className={`min-w-0 rounded-xl border bg-surface p-4 ${selected ? "border-brand-accent" : "border-border"}`}
+              >
+                <div className="mb-3 flex items-start gap-3">
+                  <span className="rounded-lg bg-surface-2 p-2 text-accent">
+                    <Icon className="h-5 w-5" aria-hidden="true" />
+                  </span>
+                  <div>
+                    <h3
+                      id={`department-${department.id}`}
+                      className="font-semibold"
+                    >
+                      {department.name}
+                    </h3>
+                    <p className="mt-1 text-xs text-muted">
+                      {info.description}
+                    </p>
+                  </div>
+                </div>
+                <ul className="space-y-2">
+                  {department.tasks.map(([id, label]) => (
+                    <li key={id}>
+                      <Button
+                        variant={activeTab === id ? "primary" : "secondary"}
+                        size="sm"
+                        aria-current={activeTab === id ? "page" : undefined}
+                        className="h-auto min-h-9 w-full justify-start whitespace-normal py-2 text-left"
+                        onClick={() => setTab(id)}
+                      >
+                        {label}
+                      </Button>
+                    </li>
+                  ))}
+                  {department.id === "ventes" && has(["MANAGER"]) && (
+                    <li>
+                      <Link
+                        href={`/t/${tenantId}/pos`}
+                        className="block rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-surface-2"
+                      >
+                        Caisse magasin
+                      </Link>
+                    </li>
+                  )}
+                  {department.id === "rh" && (
+                    <li>
+                      <Link
+                        href={`/t/${tenantId}/hr`}
+                        className="block rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-surface-2"
+                      >
+                        Contrats et congés
+                      </Link>
+                    </li>
+                  )}
+                </ul>
+              </section>
+            );
+          })}
+        </nav>
+        <p aria-live="polite" className="text-sm text-muted">
+          <span className="font-medium text-fg">
+            {spaces.find(
+              (x) =>
+                x.id ===
+                (activeProfile === "tous"
+                  ? taskDepartment(activeTab)
+                  : activeProfile),
+            )?.name || "ERP"}
+          </span>
+          {" / "}
+          {tabs.find(([id]) => id === activeTab)?.[1]}
+        </p>
+      </section>
       {error && (
         <div
           role="alert"
@@ -730,7 +1116,122 @@ export default function BusinessPage() {
           )}
         </Panel>
       )}
-      {tab === "overview" && (
+      {activeTab === "group" &&
+        (financialIds.length ? (
+          <GroupDashboard
+            state={s}
+            companyIds={financialIds.filter(
+              (id) => !company || id === company.id,
+            )}
+            onCompany={(id, view = "overview") => {
+              setSelected(id);
+              openView(view);
+            }}
+          />
+        ) : (
+          <p>
+            Le pilotage financier est réservé aux sociétés pour lesquelles vous
+            avez un accès de direction, finance ou lecture financière.
+          </p>
+        ))}
+      {activeTab === "intercompany" && (
+        <IntercompanyPanel
+          state={s}
+          companyIds={settlementIds}
+          busy={busy}
+          run={run}
+        />
+      )}
+      {company && activeTab === "receipts" && (
+        <ReceivingPanel
+          state={s}
+          company={company}
+          editable={
+            warehousing &&
+            enabled("purchasing") &&
+            enabled("inventory") &&
+            enabled("finance")
+          }
+          busy={busy}
+          run={run}
+        />
+      )}
+      {company && activeTab === "customerOrders" && (
+        <CustomerOrders
+          key={company.id}
+          state={s}
+          company={company}
+          prices={!["WAREHOUSE", "BUYER", "HR"].includes(role || "")}
+          create={operate && enabled("sales")}
+          deliver={
+            warehousing &&
+            enabled("sales") &&
+            enabled("inventory") &&
+            enabled("finance")
+          }
+          busy={busy}
+          run={run}
+        />
+      )}
+      {!company && activeTab === "customerOrders" && (
+        <p>Sélectionnez une société pour ouvrir les commandes clients.</p>
+      )}
+      {company && activeTab === "transfers" && (
+        <TransferPanel
+          key={company.id}
+          state={s}
+          company={company}
+          editable={warehousing && enabled("inventory")}
+          busy={busy}
+          run={run}
+        />
+      )}
+      {!company && ["receipts", "transfers"].includes(activeTab) && (
+        <p>Sélectionnez une société pour ouvrir les documents logistiques.</p>
+      )}
+      {activeTab === "pnl" && <AnnualPnl state={s} companyId={company?.id} />}
+      {company &&
+        activeTab === "samples" &&
+        (enabled("purchasing") ? (
+          <SupplierSamples
+            state={s}
+            company={company}
+            manage={manage}
+            operate={buying}
+            busy={busy}
+            run={run}
+          />
+        ) : (
+          <p>Module achats désactivé.</p>
+        ))}
+      {company &&
+        activeTab === "hr" &&
+        (enabled("hr") ? (
+          <HrPanel
+            key={company.id}
+            state={s}
+            company={company}
+            manage={
+              (manage || role === "HR") &&
+              (snapshot.hrCompanyIds?.includes(company.id) ??
+                snapshot.hrAccess !== false)
+            }
+            accrue={role === "HR"}
+            finance={
+              finance &&
+              (snapshot.hrCompanyIds?.includes(company.id) ??
+                snapshot.hrAccess !== false)
+            }
+            busy={busy}
+            run={run}
+          />
+        ) : (
+          <p>Activez le module RH dans Sociétés & configuration.</p>
+        ))}
+      {!company && ["samples", "hr"].includes(activeTab) && (
+        <p>Sélectionnez une société pour ouvrir ce module.</p>
+      )}
+      {activeTab === "overview" && (
         <>
           <div className="mb-5 grid gap-4 sm:grid-cols-3">
             <Card className="p-5">
@@ -768,6 +1269,7 @@ export default function BusinessPage() {
                 "Société",
                 "Banques",
                 "Caisses",
+                "Dette bancaire",
                 "À payer",
                 "À encaisser",
                 "Stock valorisé",
@@ -785,6 +1287,7 @@ export default function BusinessPage() {
                   </button>,
                   money(m.bank, c.currency),
                   money(m.cash, c.currency),
+                  money(m.bankDebt, c.currency),
                   money(m.payables, c.currency),
                   money(m.receivables, c.currency),
                   money(m.inventory, c.currency),
@@ -840,7 +1343,14 @@ export default function BusinessPage() {
           </Panel>
         </>
       )}
-      {tab === "companies" && (
+      {company && company.status && company.status !== "ACTIVE" && (
+        <p role="status" className="mb-4 text-sm text-danger">
+          Société{" "}
+          {company.status === "DELETED" ? "dans la corbeille" : "archivée"} :
+          lecture seule jusqu’à restauration.
+        </p>
+      )}
+      {activeTab === "companies" && (
         <>
           {snapshot.holdingOwner && (
             <CompanyWizard key="new-company" run={run} busy={busy} />
@@ -852,6 +1362,40 @@ export default function BusinessPage() {
               run={run}
               busy={busy}
             />
+          )}
+          {company && snapshot.holdingOwner && (
+            <Form
+              title="Archiver, supprimer ou restaurer la société"
+              busy={busy}
+              button="Confirmer le changement d’état"
+              onSubmit={(d) =>
+                run(
+                  withCompany({
+                    type: "company.lifecycle",
+                    status: text(d, "status"),
+                    confirmation: text(d, "confirmation"),
+                  }),
+                )
+              }
+            >
+              <Select
+                name="status"
+                label="Nouvel état"
+                options={[
+                  { id: "ACTIVE", name: "Active / restaurer" },
+                  { id: "ARCHIVED", name: "Archiver" },
+                  { id: "DELETED", name: "Supprimer (corbeille restaurable)" },
+                ]}
+              />
+              <Text
+                name="confirmation"
+                label={`Saisir exactement : ${company.name}`}
+              />
+              <p className="text-xs text-muted">
+                La suppression place la société dans une corbeille restaurable.
+                Ses données restent présentes dans les exports.
+              </p>
+            </Form>
           )}
           <Panel title="Sociétés du holding">
             <Table
@@ -881,17 +1425,20 @@ export default function BusinessPage() {
           </Panel>
         </>
       )}
-      {!["overview", "companies"].includes(tab) && !company && (
-        <Panel title="Choisir une société">
-          <p className="text-sm text-muted">
-            Sélectionnez une société en haut pour consulter ses opérations et
-            saisir de nouvelles données.
-          </p>
-        </Panel>
-      )}
-      {company && tab === "catalog" && (
+      {!["overview", "companies", "group", "pnl", "intercompany"].includes(
+        activeTab,
+      ) &&
+        !company && (
+          <Panel title="Choisir une société">
+            <p className="text-sm text-muted">
+              Sélectionnez une société en haut pour consulter ses opérations et
+              saisir de nouvelles données.
+            </p>
+          </Panel>
+        )}
+      {company && activeTab === "catalog" && (
         <>
-          {manage && (
+          {warehousing && (
             <Form
               title="Ajouter un entrepôt ou magasin"
               busy={busy}
@@ -925,7 +1472,7 @@ export default function BusinessPage() {
               ])}
             />
           </Panel>
-          {operate && (
+          {buying && (
             <Form
               title="Ajouter une variante produit"
               busy={busy}
@@ -934,6 +1481,7 @@ export default function BusinessPage() {
                   withCompany({
                     type: "product.create",
                     sku: text(d, "sku"),
+                    model: text(d, "model"),
                     name: text(d, "name"),
                     brand: text(d, "brand"),
                     size: text(d, "size"),
@@ -943,10 +1491,42 @@ export default function BusinessPage() {
               }
             >
               <Text name="sku" label="SKU unique" />
+              <Text name="model" label="Code modèle" required={false} />
               <Text name="name" label="Nom du produit" />
               <Text name="brand" label="Marque" required={false} />
               <Text name="size" label="Taille" required={false} />
               <Text name="color" label="Couleur" required={false} />
+            </Form>
+          )}
+          {manage && (
+            <Form
+              title="Tarif et code-barres pour la Caisse"
+              busy={busy}
+              onSubmit={(d) =>
+                formRun(() =>
+                  withCompany({
+                    type: "product.pricing",
+                    productId: text(d, "productId"),
+                    salePrice: amount(d.get("salePrice"), currency),
+                    barcode: text(d, "barcode"),
+                  }),
+                )
+              }
+            >
+              <Select
+                name="productId"
+                label="Variante à tarifer"
+                options={products.map((p) => ({
+                  id: p.id,
+                  name: productName(p.id),
+                }))}
+              />
+              <Text
+                name="salePrice"
+                label={`Prix de vente (${currency})`}
+                type="number"
+              />
+              <Text name="barcode" label="Code-barres" required={false} />
             </Form>
           )}
           <Panel title="Catalogue">
@@ -967,7 +1547,7 @@ export default function BusinessPage() {
               ])}
             />
           </Panel>
-          {(operate || finance) && (
+          {(buying || finance) && (
             <Form
               title="Ajouter un fournisseur ou client"
               busy={busy}
@@ -1006,15 +1586,42 @@ export default function BusinessPage() {
           </Panel>
         </>
       )}
-      {company && tab === "purchasing" && (
+      {company && activeTab === "purchasing" && (
         <>
+          <PartnerDirectory
+            key={company.id + "suppliers"}
+            partners={partners}
+            kind="SUPPLIER"
+            editable={(buying || finance) && enabled("purchasing")}
+            busy={busy}
+            run={(a) => run(withCompany(a))}
+          />
+          {buying && enabled("purchasing") && (
+            <ArticleCreator
+              canPrice={manage}
+              currency={currency}
+              busy={busy}
+              run={(a) => run(withCompany(a))}
+            />
+          )}
+          {financialIds.includes(company.id) && (
+            <FinancingPanel
+              key={company.id}
+              state={s}
+              companyId={company.id}
+              currency={currency}
+              editable={finance && enabled("finance") && enabled("purchasing")}
+              busy={busy}
+              run={(a) => run(withCompany(a))}
+            />
+          )}
           {!enabled("purchasing") && (
             <p className="mb-4 text-sm text-muted">
               Module achats désactivé. Le responsable peut l’activer dans la
               configuration.
             </p>
           )}
-          {operate && enabled("purchasing") && (
+          {buying && enabled("purchasing") && (
             <Form
               title="Nouvelle commande fournisseur / import"
               busy={busy}
@@ -1090,6 +1697,7 @@ export default function BusinessPage() {
                   ORDERED: "SHIPPED",
                   SHIPPED: "CUSTOMS",
                   CUSTOMS: "RECEIVED",
+                  PARTIALLY_RECEIVED: "RECEIVED",
                 };
                 const n = next[o.status];
                 return [
@@ -1102,10 +1710,11 @@ export default function BusinessPage() {
                     currency,
                   ),
                   <div className="space-y-2">
-                    {operate &&
+                    {buying &&
                       enabled("purchasing") &&
                       n &&
-                      (n !== "APPROVED" || manage) && (
+                      (n !== "APPROVED" || manage) &&
+                      (n !== "RECEIVED" || warehousing) && (
                         <Button
                           size="sm"
                           loading={busy}
@@ -1162,9 +1771,17 @@ export default function BusinessPage() {
           </Panel>
         </>
       )}
-      {company && tab === "inventory" && (
+      {company && activeTab === "inventory" && (
         <>
-          {manage && enabled("inventory") && (
+          <InventoryAnalysis
+            key={company.id}
+            state={s}
+            companyId={company.id}
+            updatedAt={query.dataUpdatedAt}
+            refreshing={query.isFetching}
+            offline={query.isRefetchError}
+          />
+          {snapshot.holdingOwner && manage && enabled("inventory") && (
             <Form
               title="Stock initial ou ajustement justifié"
               busy={busy}
@@ -1208,7 +1825,7 @@ export default function BusinessPage() {
               <Text name="reason" label="Motif obligatoire" />
             </Form>
           )}
-          {operate && enabled("inventory") && (
+          {warehousing && enabled("inventory") && (
             <Form
               title="Transfert de stock"
               busy={busy}
@@ -1242,14 +1859,18 @@ export default function BusinessPage() {
             <Table
               headers={[
                 "Produit / variante",
-                ...locations.map((l) => l.name),
-                "Total",
-                "Valeur",
+                ...locations.map((l) => `${l.name} · physique`),
+                "Total physique",
+                "Réservé clients",
+                "Disponible à vendre",
+                "Valeur physique",
               ]}
               rows={products.map((p) => [
                 productName(p.id),
                 ...locations.map((l) => productStock(s, p.id, l.id)),
                 productStock(s, p.id),
+                reservedStock(s, p.id),
+                availableStock(s, p.id),
                 money(productStock(s, p.id) * p.cost, currency),
               ])}
             />
@@ -1271,8 +1892,29 @@ export default function BusinessPage() {
           </Panel>
         </>
       )}
-      {company && tab === "sales" && (
+      {company && activeTab === "sales" && (
         <>
+          <div className="mb-5 rounded-xl border border-accent bg-accent-tint p-5">
+            <h2 className="font-semibold">Vente en magasin</h2>
+            <p className="mb-3 text-sm text-muted">
+              Caisse tactile, douchette, caméra téléphone, clients et
+              historique.
+            </p>
+            <Link
+              className="inline-block rounded-lg bg-accent px-4 py-2 text-white"
+              href={`/t/${tenantId}/pos`}
+            >
+              Ouvrir la Caisse
+            </Link>
+          </div>
+          <PartnerDirectory
+            key={company.id + "customers"}
+            partners={partners}
+            kind="CUSTOMER"
+            editable={(operate || finance) && enabled("sales")}
+            busy={busy}
+            run={(a) => run(withCompany(a))}
+          />
           {operate && enabled("sales") && (
             <Form
               title="Enregistrer une vente"
@@ -1374,7 +2016,7 @@ export default function BusinessPage() {
           </p>
         </>
       )}
-      {company && tab === "finance" && (
+      {company && activeTab === "finance" && (
         <>
           {finance && enabled("finance") && (
             <Form
@@ -1534,7 +2176,9 @@ export default function BusinessPage() {
                 name="invoiceId"
                 label="Facture à régler"
                 options={rows(s.invoices)
-                  .filter((i) => i.amount > invoicePaid(s, i.id))
+                  .filter(
+                    (i) => !i.intercompanyId && i.amount > invoicePaid(s, i.id),
+                  )
                   .map((i) => ({
                     id: i.id,
                     name: `${i.reference} · ${i.kind === "PAYABLE" ? "Payer" : "Encaisser"} ${money(i.amount - invoicePaid(s, i.id), currency)}`,
@@ -1653,7 +2297,7 @@ export default function BusinessPage() {
           </Panel>
         </>
       )}
-      {company && tab === "intelligence" && (
+      {company && activeTab === "intelligence" && (
         <>
           <Panel title="Alertes de gestion">
             <div className="space-y-3 text-sm">
@@ -1734,7 +2378,7 @@ export default function BusinessPage() {
                   "Variante",
                   "Magasin",
                   "Vendus / 30 j",
-                  "Stock / cible",
+                  "Disponible / cible",
                   "Suggestion",
                   "Explication",
                   "Action",
@@ -1781,7 +2425,7 @@ export default function BusinessPage() {
           </Panel>
         </>
       )}
-      {company && tab === "access" && (
+      {company && activeTab === "access" && (
         <Panel title="Accès à cette société">
           <p className="mb-4 text-sm text-muted">
             Les propriétaires du holding voient toutes les sociétés. Les autres
@@ -1800,6 +2444,7 @@ export default function BusinessPage() {
                     type: "access.grant",
                     userId: text(d, "userId"),
                     role: text(d, "role"),
+                    locationIds: d.getAll("locationIds").map(String),
                   }),
                 )
               }
@@ -1821,9 +2466,30 @@ export default function BusinessPage() {
                   { id: "MANAGER", name: "Responsable" },
                   { id: "FINANCE", name: "Finance" },
                   { id: "OPERATIONS", name: "Opérations" },
+                  { id: "BUYER", name: "Service achats" },
+                  { id: "WAREHOUSE", name: "Entrepôts & logistique" },
+                  {
+                    id: "HR",
+                    name: "Ressources humaines (sans règlement bancaire)",
+                  },
                   { id: "VIEWER", name: "Lecteur" },
+                  { id: "CASHIER", name: "Caissier (magasins limités)" },
+                  { id: "STORE_MANAGER", name: "Responsable magasin" },
                 ]}
               />
+              <div className="space-y-2">
+                <p className="text-sm font-medium">
+                  Magasins autorisés (Caisse)
+                </p>
+                {locations
+                  .filter((l) => l.kind === "STORE")
+                  .map((l) => (
+                    <label key={l.id} className="flex gap-2 text-sm">
+                      <input type="checkbox" name="locationIds" value={l.id} />
+                      {l.name}
+                    </label>
+                  ))}
+              </div>
             </Form>
           )}
           <Table
@@ -1852,12 +2518,57 @@ export default function BusinessPage() {
           />
         </Panel>
       )}
+      {company && manage && activeTab === "sales" && (
+        <Form
+          title="Configurer la Caisse du magasin"
+          busy={busy}
+          onSubmit={(d) =>
+            run(
+              withCompany({
+                type: "pos.configure",
+                locationId: text(d, "locationId"),
+                cashAccountId: text(d, "cashAccountId"),
+                cardAccountId: text(d, "cardAccountId"),
+                customerId: text(d, "customerId"),
+                maxDiscountBps: Math.round(Number(d.get("discount")) * 100),
+              }),
+            )
+          }
+        >
+          <Select
+            name="locationId"
+            label="Magasin à configurer"
+            options={locations.filter((l) => l.kind === "STORE")}
+          />
+          <Select
+            name="cashAccountId"
+            label="Compte de caisse"
+            options={accounts.filter((a) => a.kind === "CASH")}
+          />
+          <Select
+            name="cardAccountId"
+            label="Compte des règlements carte"
+            options={accounts.filter((a) => a.kind === "BANK")}
+          />
+          <Select
+            name="customerId"
+            label="Client comptoir"
+            options={partners.filter((p) => p.kind === "CUSTOMER")}
+          />
+          <Text
+            name="discount"
+            label="Remise maximale caissier (%)"
+            type="number"
+            value="0"
+          />
+        </Form>
+      )}
       <p className="mt-6 text-xs text-muted">
-        Pilote métier : opérations manuelles, réception complète et transferts
-        immédiats. Comptabilité légale, TVA, paie, rapprochement bancaire,
-        intégrations POS et consolidation comptable ne sont pas encore
-        implémentés. Ces écrans ne constituent pas des états financiers
-        certifiés.
+        Gestion opérationnelle : documents liés, réceptions partielles,
+        transferts suivis et consolidation de gestion. La comptabilité légale,
+        la TVA, la paie légale, les connexions bancaires et la consolidation
+        comptable réglementaire restent hors périmètre. Les chiffres affichés ne
+        sont pas des comptes certifiés.
       </p>
     </>
   );

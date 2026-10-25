@@ -84,23 +84,132 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
 const t = (id: string) => `/api/v1/tenants/${encodeURIComponent(id)}`;
 
 export const api = {
+  businessVersion: (id: string) =>
+    request<{ version: number; scopeTag: string }>(
+      `${t(id)}/business/version`,
+      { tenantId: id },
+    ),
+  hrCompanies: (id: string) =>
+    request<Array<{ id: string; name: string; currency: string }>>(
+      `${t(id)}/hr/companies`,
+      { tenantId: id },
+    ),
+  administration: () =>
+    request<{
+      platformAdmin: boolean;
+      holdings: {
+        id: string;
+        name: string;
+        slug: string;
+        status: string;
+        mode: string;
+        version: number;
+        reason: string;
+      }[];
+    }>("/api/v1/administration/holdings"),
+  holdingLifecycle: (id: string, body: unknown) =>
+    request(`/api/v1/administration/holdings/${id}/lifecycle`, {
+      method: "POST",
+      body,
+    }),
+  exportHolding: (id: string) =>
+    request<Record<string, unknown>>(
+      `/api/v1/administration/holdings/${id}/export`,
+      { method: "POST", body: {} },
+    ),
+  pos: (id: string) =>
+    request<import("@saas/types").PosSnapshot>(`${t(id)}/business/pos`, {
+      tenantId: id,
+    }),
+  posCommand: (
+    id: string,
+    version: number,
+    action: unknown,
+    commandId: string,
+  ) =>
+    request<import("@saas/types").PosSnapshot>(
+      `${t(id)}/business/pos/commands`,
+      { method: "POST", tenantId: id, body: { version, action, commandId } },
+    ),
   hrEmployees: (id: string, companyId: string) =>
-    request<Array<{id:string;userId:string|null;displayName:string;startDate:string;endDate:string|null}>>(
-      `${t(id)}/hr/companies/${encodeURIComponent(companyId)}/employees`, {tenantId:id}),
+    request<
+      Array<{
+        id: string;
+        userId: string | null;
+        displayName: string;
+        startDate: string;
+        endDate: string | null;
+      }>
+    >(`${t(id)}/hr/companies/${encodeURIComponent(companyId)}/employees`, {
+      tenantId: id,
+    }),
   hrContracts: (id: string, companyId: string) =>
-    request<Array<{id:string;employeeId:string;startDate:string;endDate:string|null;monthlyGrossMinor:string;currency:string}>>(
-      `${t(id)}/hr/companies/${encodeURIComponent(companyId)}/contracts`, {tenantId:id}),
+    request<
+      Array<{
+        id: string;
+        employeeId: string;
+        startDate: string;
+        endDate: string | null;
+        monthlyGrossMinor: string;
+        currency: string;
+      }>
+    >(`${t(id)}/hr/companies/${encodeURIComponent(companyId)}/contracts`, {
+      tenantId: id,
+    }),
   hrLeaves: (id: string, companyId: string) =>
-    request<Array<{id:string;employeeId:string;startsOn:string;endsOn:string;status:string}>>(
-      `${t(id)}/hr/companies/${encodeURIComponent(companyId)}/leave`, {tenantId:id}),
-  hrCreateEmployee: (id:string, companyId:string, body:{displayName:string;startDate:string;userId?:string}) =>
-    request<{id:string}>(`${t(id)}/hr/companies/${encodeURIComponent(companyId)}/employees`,{method:"POST",tenantId:id,body}),
-  hrCreateContract: (id:string, companyId:string, body:{employeeId:string;startDate:string;monthlyGrossMinor:number;currency:string}) =>
-    request<{id:string}>(`${t(id)}/hr/companies/${encodeURIComponent(companyId)}/contracts`,{method:"POST",tenantId:id,body}),
-  hrRequestLeave: (id:string, companyId:string, body:{employeeId:string;startsOn:string;endsOn:string}) =>
-    request<{id:string;status:string}>(`${t(id)}/hr/companies/${encodeURIComponent(companyId)}/leave`,{method:"POST",tenantId:id,body}),
-  hrDecideLeave: (id:string, companyId:string, leaveId:string, status:"APPROVED"|"REJECTED") =>
-    request<{id:string;status:string}>(`${t(id)}/hr/companies/${encodeURIComponent(companyId)}/leave/${encodeURIComponent(leaveId)}`,{method:"PATCH",tenantId:id,body:{status}}),
+    request<
+      Array<{
+        id: string;
+        employeeId: string;
+        startsOn: string;
+        endsOn: string;
+        status: string;
+      }>
+    >(`${t(id)}/hr/companies/${encodeURIComponent(companyId)}/leave`, {
+      tenantId: id,
+    }),
+  hrCreateEmployee: (
+    id: string,
+    companyId: string,
+    body: { displayName: string; startDate: string; userId?: string },
+  ) =>
+    request<{ id: string }>(
+      `${t(id)}/hr/companies/${encodeURIComponent(companyId)}/employees`,
+      { method: "POST", tenantId: id, body },
+    ),
+  hrCreateContract: (
+    id: string,
+    companyId: string,
+    body: {
+      employeeId: string;
+      startDate: string;
+      monthlyGrossMinor: number;
+      currency: string;
+    },
+  ) =>
+    request<{ id: string }>(
+      `${t(id)}/hr/companies/${encodeURIComponent(companyId)}/contracts`,
+      { method: "POST", tenantId: id, body },
+    ),
+  hrRequestLeave: (
+    id: string,
+    companyId: string,
+    body: { employeeId: string; startsOn: string; endsOn: string },
+  ) =>
+    request<{ id: string; status: string }>(
+      `${t(id)}/hr/companies/${encodeURIComponent(companyId)}/leave`,
+      { method: "POST", tenantId: id, body },
+    ),
+  hrDecideLeave: (
+    id: string,
+    companyId: string,
+    leaveId: string,
+    status: "APPROVED" | "REJECTED",
+  ) =>
+    request<{ id: string; status: string }>(
+      `${t(id)}/hr/companies/${encodeURIComponent(companyId)}/leave/${encodeURIComponent(leaveId)}`,
+      { method: "PATCH", tenantId: id, body: { status } },
+    ),
   business: (id: string) =>
     request<import("@saas/types").BusinessSnapshot>(`${t(id)}/business`, {
       tenantId: id,

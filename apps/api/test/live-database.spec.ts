@@ -629,6 +629,756 @@ describe.skipIf(!live)("Real PostgreSQL API and RLS integration", () => {
       ).status,
     ).toBe(403);
   });
+  it("enforces cashier store scope, price authority, idempotent POS sales and financial redaction over HTTP", async () => {
+    const path = `/tenants/${tenantId}/business`;
+    let state = (await request(path, { cookie: ownerCookie })).body;
+    const companyId = state.state.companies[0].id;
+    const command = async (
+      action: any,
+      cookie = ownerCookie,
+      commandId = randomUUID(),
+      version = state.version,
+      pos = false,
+    ) => {
+      const r = await request(`${path}/${pos ? "pos/commands" : "commands"}`, {
+        method: "POST",
+        cookie,
+        body: { commandId, version, action: { companyId, ...action } },
+      });
+      if (r.status === 201 && cookie === ownerCookie && !pos) state = r.body;
+      return r;
+    };
+    await command({
+      type: "location.create",
+      name: "POS Tunis",
+      kind: "STORE",
+    });
+    const locationId = state.state.locations.at(-1).id;
+    await command({
+      type: "account.create",
+      name: "Till",
+      kind: "CASH",
+      opening: 100000,
+      asOf: "2026-01-01",
+    });
+    const cashAccountId = state.state.accounts.at(-1).id;
+    await command({
+      type: "account.create",
+      name: "Bank",
+      kind: "BANK",
+      opening: 0,
+      asOf: "2026-01-01",
+    });
+    const cardAccountId = state.state.accounts.at(-1).id;
+    await command({
+      type: "partner.create",
+      name: "Counter",
+      kind: "CUSTOMER",
+      email: "",
+    });
+    const customerId = state.state.partners.at(-1).id;
+    const productId = state.state.products[0].id;
+    await command({
+      type: "product.pricing",
+      productId,
+      salePrice: 1000,
+      barcode: "HTTP-SHOE",
+    });
+    await command({
+      type: "stock.adjust",
+      productId,
+      locationId,
+      quantity: 5,
+      unitCost: 500,
+      reason: "POS opening",
+    });
+    await command({
+      type: "pos.configure",
+      locationId,
+      cashAccountId,
+      cardAccountId,
+      customerId,
+      maxDiscountBps: 500,
+    });
+    const userId = (await request("/auth/me", { cookie: viewerCookie })).body
+      .profile.id;
+    expect(
+      (
+        await command({
+          type: "access.grant",
+          userId,
+          role: "CASHIER",
+          locationIds: [locationId],
+        })
+      ).status,
+    ).toBe(201);
+    const hidden = await request(path, { cookie: viewerCookie });
+    expect(hidden.body.state.companies).toHaveLength(0);
+    expect(hidden.body.state.accounts).toHaveLength(0);
+    const view = await request(`${path}/pos`, { cookie: viewerCookie });
+    expect(view.body.stores.map((x: any) => x.id)).toEqual([locationId]);
+    expect(view.body.products[0].cost).toBeUndefined();
+    expect(view.body.accounts).toBeUndefined();
+    const opened = await command(
+      { type: "pos.open", locationId, opening: 1000 },
+      viewerCookie,
+      randomUUID(),
+      state.version,
+      true,
+    );
+    expect(opened.status).toBe(201);
+    const sessionId = opened.body.sessions[0].id,
+      version = opened.body.version;
+    const action = {
+      type: "pos.checkout",
+      sessionId,
+      items: [{ productId, quantity: 1 }],
+      discountBps: 0,
+      cash: 1000,
+      card: 0,
+      cashGiven: 1000,
+    };
+    const commandId = randomUUID();
+    const sold = await command(action, viewerCookie, commandId, version, true);
+    expect(sold.status).toBe(201);
+    expect(sold.body.tickets).toHaveLength(1);
+    const replay = await command(
+      action,
+      viewerCookie,
+      commandId,
+      version,
+      true,
+    );
+    expect(replay.status).toBe(201);
+    expect(replay.body.tickets).toHaveLength(1);
+    const denied = await command(
+      { type: "product.pricing", productId, salePrice: 1, barcode: "" },
+      viewerCookie,
+      randomUUID(),
+      sold.body.version,
+      true,
+    );
+    expect(denied.status).toBe(403);
+    const close = await command(
+      {
+        type: "pos.close",
+        sessionId,
+        counted: 2000,
+        reason: "balanced closing",
+      },
+      viewerCookie,
+      randomUUID(),
+      sold.body.version,
+      true,
+    );
+    expect(close.status).toBe(201);
+    expect(close.body.sessions[0].variance).toBe(0);
+  });
+  it("authorizes complete exports and reversible holding lifecycle without destroying records", async () => {
+    const route = `/administration/holdings/${tenantId}`;
+    expect(
+      (
+        await request(`${route}/export`, {
+          method: "POST",
+          cookie: otherCookie,
+          body: {},
+        })
+      ).status,
+    ).toBe(403);
+    const exported = await request(`${route}/export`, {
+      method: "POST",
+      cookie: ownerCookie,
+      body: {},
+    });
+    expect(exported.status).toBe(201);
+    expect(exported.body.business.state.sales.length).toBeGreaterThan(0);
+    expect(exported.body.auth_sessions).toBeUndefined();
+    expect(JSON.stringify(exported.body.members)).not.toContain("password");
+    const list = await request("/administration/holdings", {
+      cookie: ownerCookie,
+    });
+    const holding = list.body.holdings.find((x: any) => x.id === tenantId);
+    const body = {
+      version: holding.version,
+      mode: "DELETED",
+      confirmation: holding.name,
+      reason: "test reversible deletion",
+    };
+    expect(
+      (
+        await request(`${route}/lifecycle`, {
+          method: "POST",
+          cookie: ownerCookie,
+          body: { ...body, confirmation: "wrong" },
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await request(`${route}/lifecycle`, {
+          method: "POST",
+          cookie: ownerCookie,
+          body,
+        })
+      ).status,
+    ).toBe(201);
+    expect(
+      (await request(`/tenants/${tenantId}/business`, { cookie: ownerCookie }))
+        .status,
+    ).toBe(403);
+    const archived = await request(`${route}/export`, {
+      method: "POST",
+      cookie: ownerCookie,
+      body: {},
+    });
+    expect(archived.status).toBe(201);
+    expect(archived.body.business.state.sales.length).toBe(
+      exported.body.business.state.sales.length,
+    );
+    expect(
+      (
+        await request(`${route}/lifecycle`, {
+          method: "POST",
+          cookie: ownerCookie,
+          body: {
+            ...body,
+            version: holding.version + 1,
+            mode: "ACTIVE",
+            reason: "restore test",
+          },
+        })
+      ).status,
+    ).toBe(201);
+    expect(
+      (await request(`/tenants/${tenantId}/business`, { cookie: ownerCookie }))
+        .status,
+    ).toBe(200);
+  });
+  it("shares employees/contracts with HR cost tracking and isolates real HR rows", async () => {
+    let snap = (
+      await request(`/tenants/${tenantId}/business`, { cookie: ownerCookie })
+    ).body;
+    async function cmd(action: Record<string, unknown>) {
+      const r = await request(`/tenants/${tenantId}/business/commands`, {
+        method: "POST",
+        cookie: ownerCookie,
+        body: { commandId: randomUUID(), version: snap.version, action },
+      });
+      expect(r.status).toBe(201);
+      snap = r.body;
+    }
+    await cmd({
+      type: "company.create",
+      data: {
+        name: "HR integration",
+        currency: "TND",
+        country: "Tunisie",
+        brands: [],
+        leadDays: 30,
+        coverDays: 30,
+        minimumStock: 5,
+        modules: ["hr", "finance"],
+      },
+    });
+    const companyId = snap.state.companies.at(-1).id;
+    await cmd({
+      type: "account.create",
+      companyId,
+      name: "HR Bank",
+      kind: "BANK",
+      opening: 10000000,
+      asOf: "2025-01-01",
+    });
+    const accountId = snap.state.accounts.at(-1).id;
+    await cmd({
+      type: "hr.employee.create",
+      companyId,
+      fullName: "Private HR employee",
+      jobTitle: "Seller",
+      department: "Stores",
+      grossSalary: 1000000,
+      employerChargesBps: 1800,
+      hiredAt: "2025-01-01",
+    });
+    const employeeId = snap.state.employees.at(-1).id;
+    const route = `/tenants/${tenantId}/hr/companies/${companyId}`;
+    expect(
+      (await request(route + "/employees", { cookie: ownerCookie })).body[0].id,
+    ).toBe(employeeId);
+    expect(
+      (await request(route + "/contracts", { cookie: ownerCookie })).body[0]
+        .monthlyGrossMinor,
+    ).toBe("1000000");
+    expect(
+      (await request(route + "/contracts", { cookie: viewerCookie })).status,
+    ).toBe(403);
+    expect(
+      (await request(route + "/employees", { cookie: otherCookie })).status,
+    ).toBe(403);
+    const viewerId = (await request("/auth/me", { cookie: viewerCookie })).body
+      .profile.id;
+    await cmd({
+      type: "access.grant",
+      companyId,
+      userId: viewerId,
+      role: "MANAGER",
+    });
+    const noHr = (
+      await request(`/tenants/${tenantId}/business`, { cookie: viewerCookie })
+    ).body;
+    expect(noHr.hrAccess).toBe(false);
+    expect(noHr.state.employees).toHaveLength(0);
+    expect(
+      (await request(route + "/contracts", { cookie: viewerCookie })).body,
+    ).toHaveLength(0);
+    expect(
+      (
+        await request(`/tenants/${tenantId}/business/commands`, {
+          method: "POST",
+          cookie: viewerCookie,
+          body: {
+            commandId: randomUUID(),
+            version: noHr.version,
+            action: {
+              type: "hr.payroll.record",
+              companyId,
+              employeeId,
+              period: "2026-10",
+            },
+          },
+        })
+      ).status,
+    ).toBe(403);
+    const contract = await request(route + "/contracts", {
+      method: "POST",
+      cookie: ownerCookie,
+      body: {
+        employeeId,
+        startDate: "2026-01-01",
+        monthlyGrossMinor: 2000000,
+        currency: "TND",
+      },
+    });
+    expect(contract.status).toBe(201);
+    snap = (
+      await request(`/tenants/${tenantId}/business`, { cookie: ownerCookie })
+    ).body;
+    await cmd({
+      type: "hr.payroll.record",
+      companyId,
+      employeeId,
+      period: new Date().toISOString().slice(0, 7),
+    });
+    expect(snap.state.payroll.at(-1).total).toBe(2360000);
+    await cmd({
+      type: "hr.payroll.pay",
+      companyId,
+      payrollId: snap.state.payroll.at(-1).id,
+      accountId,
+    });
+    const leave = await request(route + "/leave", {
+      method: "POST",
+      cookie: ownerCookie,
+      body: { employeeId, startsOn: "2026-11-01", endsOn: "2026-11-03" },
+    });
+    expect(leave.status).toBe(201);
+    expect(
+      (
+        await request(route + "/leave/" + leave.body.id, {
+          method: "PATCH",
+          cookie: ownerCookie,
+          body: { status: "APPROVED" },
+        })
+      ).status,
+    ).toBe(200);
+    const client = await restricted.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT set_config('app.current_tenant_id',$1,true)", [
+        otherTenantId,
+      ]);
+      expect(
+        (
+          await client.query("SELECT id FROM hr_employees WHERE id=$1", [
+            employeeId,
+          ])
+        ).rows,
+      ).toHaveLength(0);
+      expect(
+        (
+          await client.query(
+            "SELECT id FROM hr_contracts WHERE employee_id=$1",
+            [employeeId],
+          )
+        ).rows,
+      ).toHaveLength(0);
+      expect(
+        (
+          await client.query(
+            "SELECT id FROM hr_leave_requests WHERE employee_id=$1",
+            [employeeId],
+          )
+        ).rows,
+      ).toHaveLength(0);
+      await client.query("ROLLBACK");
+    } finally {
+      client.release();
+    }
+    const exported = await request(
+      `/administration/holdings/${tenantId}/export`,
+      { method: "POST", cookie: ownerCookie, body: {} },
+    );
+    expect(exported.status).toBe(201);
+    expect(
+      exported.body.hr_employees.some(
+        (e: { id: string }) => e.id === employeeId,
+      ),
+    ).toBe(true);
+  });
+  it("persists ERP partial receipts, scoped buyer/warehouse/HR roles and paired internal settlement", async () => {
+    let snap = (
+      await request(`/tenants/${tenantId}/business`, { cookie: ownerCookie })
+    ).body;
+    async function command(
+      action: Record<string, unknown>,
+      cookie = ownerCookie,
+    ) {
+      const r = await request(`/tenants/${tenantId}/business/commands`, {
+        method: "POST",
+        cookie,
+        body: { commandId: randomUUID(), version: snap.version, action },
+      });
+      if (r.status === 201) snap = r.body;
+      return r;
+    }
+    const data = {
+      currency: "TND",
+      country: "Tunisie",
+      brands: [],
+      leadDays: 10,
+      coverDays: 30,
+      minimumStock: 2,
+      modules: ["purchasing", "inventory", "sales", "finance", "hr"],
+    };
+    expect(
+      (
+        await command({
+          type: "company.create",
+          data: { ...data, name: "ERP A" },
+        })
+      ).status,
+    ).toBe(201);
+    const a = snap.state.companies.at(-1).id;
+    expect(
+      (
+        await command({
+          type: "company.create",
+          data: { ...data, name: "ERP B" },
+        })
+      ).status,
+    ).toBe(201);
+    const b = snap.state.companies.at(-1).id;
+    await command({
+      type: "location.create",
+      companyId: a,
+      name: "ERP Warehouse",
+      kind: "WAREHOUSE",
+    });
+    const wh = snap.state.locations.at(-1).id;
+    await command({
+      type: "product.create",
+      companyId: a,
+      sku: "ERP-42",
+      name: "ERP Shoe",
+      brand: "Demo",
+      size: "42",
+      color: "Black",
+    });
+    const p = snap.state.products.at(-1).id;
+    await command({
+      type: "partner.create",
+      companyId: a,
+      name: "ERP Supplier",
+      kind: "SUPPLIER",
+      email: "",
+    });
+    const supplier = snap.state.partners.at(-1).id;
+    for (const companyId of [a, b])
+      await command({
+        type: "account.create",
+        companyId,
+        name: "ERP Bank",
+        kind: "BANK",
+        opening: 1000000,
+        asOf: "2025-01-01",
+      });
+    const bankA = snap.state.accounts.at(-2).id,
+      bankB = snap.state.accounts.at(-1).id;
+    await command({
+      type: "order.create",
+      companyId: a,
+      reference: "ERP-PO",
+      supplierId: supplier,
+      locationId: wh,
+      origin: "Test",
+      eta: "2026-10-18",
+      dueDate: "2026-11-01",
+      landedCharges: 100,
+      lines: [{ productId: p, quantity: 10, unitPrice: 1000 }],
+    });
+    const orderId = snap.state.orders.at(-1).id;
+    for (const status of ["APPROVED", "ORDERED", "SHIPPED", "CUSTOMS"])
+      expect(
+        (
+          await command({
+            type: "order.transition",
+            companyId: a,
+            orderId,
+            status,
+          })
+        ).status,
+      ).toBe(201);
+    const userId = (await request("/auth/me", { cookie: viewerCookie })).body
+      .profile.id;
+    await command({
+      type: "access.grant",
+      companyId: a,
+      userId,
+      role: "BUYER",
+    });
+    expect(
+      (
+        await command(
+          {
+            type: "order.transition",
+            companyId: a,
+            orderId,
+            status: "RECEIVED",
+          },
+          viewerCookie,
+        )
+      ).status,
+    ).toBe(403);
+    await command({
+      type: "access.grant",
+      companyId: a,
+      userId,
+      role: "WAREHOUSE",
+    });
+    expect(
+      (
+        await command(
+          {
+            type: "order.receive",
+            companyId: a,
+            orderId,
+            reference: "ERP-BR",
+            lines: [{ productId: p, quantity: 4 }],
+          },
+          viewerCookie,
+        )
+      ).status,
+    ).toBe(201);
+    expect(
+      snap.state.invoices.filter(
+        (i: { companyId: string }) => i.companyId === a,
+      ),
+    ).toHaveLength(0);
+    expect(
+      snap.state.accounts.filter(
+        (i: { companyId: string }) => i.companyId === a,
+      ),
+    ).toHaveLength(0);
+    snap = (
+      await request(`/tenants/${tenantId}/business`, { cookie: ownerCookie })
+    ).body;
+    expect(
+      snap.state.orders.find((o: { id: string }) => o.id === orderId).status,
+    ).toBe("PARTIALLY_RECEIVED");
+    expect(
+      snap.state.invoices.find(
+        (i: { sourceId: string }) => i.sourceId === orderId,
+      ).amount,
+    ).toBe(4000);
+    await command({ type: "access.grant", companyId: a, userId, role: "HR" });
+    expect(
+      (
+        await command(
+          {
+            type: "hr.employee.create",
+            companyId: a,
+            fullName: "ERP HR Employee",
+            jobTitle: "Seller",
+            department: "Stores",
+            grossSalary: 100000,
+            employerChargesBps: 1800,
+            hiredAt: "2025-01-01",
+          },
+          viewerCookie,
+        )
+      ).status,
+    ).toBe(201);
+    expect(snap.hrCompanyIds).toContain(a);
+    expect(
+      snap.state.accounts.filter(
+        (i: { companyId: string }) => i.companyId === a,
+      ),
+    ).toHaveLength(0);
+    expect(
+      snap.state.orders.filter((i: { companyId: string }) => i.companyId === a),
+    ).toHaveLength(0);
+    expect(
+      (
+        await request(`/tenants/${tenantId}/hr/companies/${a}/employees`, {
+          cookie: viewerCookie,
+        })
+      ).body.some(
+        (e: { displayName: string }) => e.displayName === "ERP HR Employee",
+      ),
+    ).toBe(true);
+    snap = (
+      await request(`/tenants/${tenantId}/business`, { cookie: ownerCookie })
+    ).body;
+    await command({
+      type: "intercompany.create",
+      companyId: a,
+      toCompanyId: b,
+      reference: "ERP-IC",
+      description: "Shared service",
+      amount: 100000,
+      dueDate: "2026-11-01",
+    });
+    const ic = snap.state.intercompany.at(-1);
+    expect(
+      (
+        await command({
+          type: "intercompany.settle",
+          companyId: a,
+          chargeId: ic.id,
+          payerAccountId: bankB,
+          receiverAccountId: bankA,
+          amount: 20000,
+        })
+      ).status,
+    ).toBe(201);
+    expect(
+      snap.state.payments.filter((p: { invoiceId: string }) =>
+        [ic.receivableId, ic.payableId].includes(p.invoiceId),
+      ),
+    ).toHaveLength(2);
+
+    // Real HTTP/PG: reservations persist, role-scoped delivery creates one receivable.
+    await command({
+      type: "partner.create",
+      companyId: a,
+      name: "ERP Client",
+      kind: "CUSTOMER",
+      email: "",
+    });
+    const clientId = snap.state.partners.at(-1).id;
+    expect(
+      (
+        await command({
+          type: "customerOrder.create",
+          companyId: a,
+          reference: "ERP-CO",
+          customerId: clientId,
+          locationId: wh,
+          dueDate: "2026-11-01",
+          lines: [{ productId: p, quantity: 3, unitPrice: 2000 }],
+        })
+      ).status,
+    ).toBe(201);
+    const co = snap.state.customerOrders.at(-1).id;
+    await command({ type: "customerOrder.confirm", companyId: a, orderId: co });
+    expect(
+      (
+        await command({
+          type: "stock.adjust",
+          companyId: a,
+          productId: p,
+          locationId: wh,
+          quantity: -2,
+          unitCost: 0,
+          reason: "Reserved",
+        })
+      ).status,
+    ).toBe(400);
+    await command({
+      type: "access.grant",
+      companyId: a,
+      userId,
+      role: "WAREHOUSE",
+    });
+    expect(
+      (
+        await command(
+          {
+            type: "customerOrder.cancel",
+            companyId: a,
+            orderId: co,
+            reason: "Not permitted",
+          },
+          viewerCookie,
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await command(
+          {
+            type: "customerOrder.deliver",
+            companyId: a,
+            orderId: co,
+            reference: "ERP-DELIVERY",
+            lines: [{ productId: p, quantity: 1 }],
+          },
+          viewerCookie,
+        )
+      ).status,
+    ).toBe(201);
+    expect(
+      snap.state.customerOrders.find((o: { id: string }) => o.id === co)
+        .lines[0].unitPrice,
+    ).toBe(0);
+    expect(
+      snap.state.invoices.filter(
+        (i: { companyId: string }) => i.companyId === a,
+      ),
+    ).toHaveLength(0);
+    snap = (
+      await request(`/tenants/${tenantId}/business`, { cookie: ownerCookie })
+    ).body;
+    expect(
+      snap.state.customerOrders.find((o: { id: string }) => o.id === co).status,
+    ).toBe("PARTIALLY_DELIVERED");
+    expect(
+      snap.state.invoices.find(
+        (i: { reference: string }) => i.reference === "SALE:BL:ERP-DELIVERY",
+      ).amount,
+    ).toBe(2000);
+    expect(
+      (
+        await command({
+          type: "customerOrder.deliver",
+          companyId: a,
+          orderId: co,
+          reference: "ERP-DELIVERY",
+          lines: [{ productId: p, quantity: 1 }],
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await command({
+          type: "customerOrder.cancel",
+          companyId: a,
+          orderId: co,
+          reason: "Remainder cancelled",
+        })
+      ).status,
+    ).toBe(201);
+  });
   it("revokes logged-out sessions server-side", async () => {
     expect(
       (

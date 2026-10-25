@@ -1,3 +1,4 @@
+import { posSnapshot } from "./pos.engine";
 import {
   Injectable,
   Inject,
@@ -27,10 +28,50 @@ export class BusinessService {
     return {
       userId: user.userId,
       owner: user.isPlatformAdmin || tenant.roles.includes("Owner"),
+      hrAccess:
+        user.isPlatformAdmin ||
+        tenant.roles.includes("Owner") ||
+        tenant.permissions.includes("hr:manage"),
     };
   }
-  async snapshot(tenant: TenantContext) {
+  private hrCompanies(tenant: TenantContext, state: BusinessState) {
+    const { userId, hrAccess } = this.identity(tenant);
+    return state.companies
+      .filter(
+        (c) =>
+          hrAccess ||
+          state.access.some(
+            (g) =>
+              g.companyId === c.id &&
+              g.userId === userId &&
+              g.membershipId === tenant.membershipId &&
+              g.role === "HR",
+          ),
+      )
+      .map((c) => c.id);
+  }
+  async version(tenant: TenantContext) {
     const { userId, owner } = this.identity(tenant);
+    const r = await this.db.queryInTenantContext(
+      tenant.tenantId,
+      "SELECT version FROM business_ledgers WHERE tenant_id=$1",
+      [tenant.tenantId],
+    );
+    const scopeTag = createHash("sha256")
+      .update(
+        JSON.stringify([
+          userId,
+          owner,
+          tenant.membershipId,
+          [...tenant.roles].sort(),
+          [...tenant.permissions].sort(),
+        ]),
+      )
+      .digest("hex");
+    return { version: Number(r.rows[0]?.version || 0), scopeTag };
+  }
+  async snapshot(tenant: TenantContext) {
+    const { userId, owner, hrAccess } = this.identity(tenant);
     const result = await this.db.queryInTenantContext(
       tenant.tenantId,
       "SELECT version, state FROM business_ledgers WHERE tenant_id=$1",
@@ -43,14 +84,53 @@ export class BusinessService {
         userId,
         owner,
         tenant.membershipId,
+        hrAccess,
       ),
       holdingOwner: owner,
+      hrAccess:
+        this.hrCompanies(tenant, result.rows[0]?.state || emptyBusiness())
+          .length > 0,
+      hrCompanyIds: this.hrCompanies(
+        tenant,
+        result.rows[0]?.state || emptyBusiness(),
+      ),
       userId,
     };
   }
-  async execute(tenant: TenantContext, command: BusinessCommand) {
-    const { userId, owner } = this.identity(tenant);
+  async pos(tenant: TenantContext) {
+    const { userId, owner, hrAccess } = this.identity(tenant);
+    const r = await this.db.queryInTenantContext(
+      tenant.tenantId,
+      "SELECT version,state FROM business_ledgers WHERE tenant_id=$1",
+      [tenant.tenantId],
+    );
+    return posSnapshot(
+      r.rows[0]?.state || emptyBusiness(),
+      Number(r.rows[0]?.version || 0),
+      userId,
+      owner,
+      tenant.membershipId,
+    );
+  }
+  async execute(
+    tenant: TenantContext,
+    command: BusinessCommand,
+    forPos = false,
+  ) {
+    const { userId, owner, hrAccess } = this.identity(tenant);
     return this.db.runInTenantContext(tenant.tenantId, async (client) => {
+      await client.query(
+        "SELECT pg_advisory_xact_lock_shared(hashtextextended($1,0))",
+        [tenant.tenantId],
+      );
+      const holding = await client.query(
+        "SELECT status FROM tenants WHERE id=$1",
+        [tenant.tenantId],
+      );
+      if (holding.rows[0]?.status !== "ACTIVE")
+        throw new ForbiddenException(
+          "Holding suspendue, archivée ou supprimée",
+        );
       await client.query(
         "INSERT INTO business_ledgers (tenant_id) VALUES ($1) ON CONFLICT DO NOTHING",
         [tenant.tenantId],
@@ -59,6 +139,16 @@ export class BusinessService {
         "SELECT version,state FROM business_ledgers WHERE tenant_id=$1 FOR UPDATE",
         [tenant.tenantId],
       );
+      if (
+        command.action.type.startsWith("hr.") &&
+        (!("companyId" in command.action) ||
+          !this.hrCompanies(tenant, rows[0].state).includes(
+            command.action.companyId,
+          ))
+      )
+        throw new ForbiddenException(
+          "Permission RH requise dans cette société",
+        );
       const fingerprint = createHash("sha256")
         .update(JSON.stringify(command.action))
         .digest("hex");
@@ -72,6 +162,14 @@ export class BusinessService {
           previous.rows[0].payload_hash !== fingerprint
         )
           throw new ConflictException("Identifiant de commande déjà utilisé");
+        if (forPos)
+          return posSnapshot(
+            rows[0].state,
+            Number(rows[0].version),
+            userId,
+            owner,
+            tenant.membershipId,
+          );
         return {
           version: Number(rows[0].version),
           state: visibleBusiness(
@@ -79,8 +177,11 @@ export class BusinessService {
             userId,
             owner,
             tenant.membershipId,
+            hrAccess,
           ),
           holdingOwner: owner,
+          hrAccess: this.hrCompanies(tenant, rows[0].state).length > 0,
+          hrCompanyIds: this.hrCompanies(tenant, rows[0].state),
           userId,
         };
       }
@@ -100,6 +201,28 @@ export class BusinessService {
           );
         targetMembershipId = member.rows[0].id;
       }
+      // A contract effective on the first day of the payroll month supplies the salary.
+      // No automatic prorating or statutory payroll is claimed by this cost tracker.
+      if (command.action.type === "hr.payroll.record") {
+        const a = command.action;
+        const contracts = await client.query(
+          "SELECT monthly_gross_minor,currency FROM hr_contracts WHERE tenant_id=$1 AND company_id=$2 AND employee_id=$3 AND start_date<=$4::date AND (end_date IS NULL OR end_date>=$4::date) ORDER BY start_date DESC,created_at DESC LIMIT 1",
+          [tenant.tenantId, a.companyId, a.employeeId, a.period + "-01"],
+        );
+        const employee = (rows[0].state as BusinessState).employees?.find(
+          (e) => e.id === a.employeeId && e.companyId === a.companyId,
+        );
+        const company = (rows[0].state as BusinessState).companies.find(
+          (c) => c.id === a.companyId,
+        );
+        if (employee && contracts.rows.length) {
+          if (contracts.rows[0].currency !== company?.currency)
+            throw new BadRequestException(
+              "Devise du contrat différente de celle de la société",
+            );
+          employee.grossSalary = Number(contracts.rows[0].monthly_gross_minor);
+        }
+      }
       const state = applyBusiness(
         rows[0].state as BusinessState,
         command.action,
@@ -114,6 +237,46 @@ export class BusinessService {
           (g) => g.companyId === action.companyId && g.userId === action.userId,
         );
         if (grant) grant.membershipId = targetMembershipId;
+      }
+      if (command.action.type === "hr.employee.create") {
+        const e = state.employees![state.employees!.length - 1];
+        await client.query(
+          "INSERT INTO hr_employees(id,tenant_id,company_id,display_name,start_date) VALUES($1,$2,$3,$4,$5)",
+          [e.id, tenant.tenantId, e.companyId, e.fullName, e.hiredAt],
+        );
+        await client.query(
+          "INSERT INTO hr_contracts(id,tenant_id,company_id,employee_id,start_date,monthly_gross_minor,currency) VALUES($1,$2,$3,$4,$5,$6,$7)",
+          [
+            randomUUID(),
+            tenant.tenantId,
+            e.companyId,
+            e.id,
+            e.hiredAt,
+            e.grossSalary,
+            state.companies.find((c) => c.id === e.companyId)!.currency,
+          ],
+        );
+      }
+      if (
+        command.action.type === "hr.employee.status" ||
+        command.action.type === "hr.employee.update"
+      ) {
+        const a = command.action,
+          e = state.employees!.find(
+            (e) => e.id === a.employeeId && e.companyId === a.companyId,
+          )!;
+        await client.query(
+          "UPDATE hr_employees SET display_name=$4,end_date=$5 WHERE tenant_id=$1 AND company_id=$2 AND id=$3",
+          [
+            tenant.tenantId,
+            e.companyId,
+            e.id,
+            e.fullName,
+            e.status === "INACTIVE"
+              ? new Date().toISOString().slice(0, 10)
+              : null,
+          ],
+        );
       }
       const encoded = JSON.stringify(state);
       if (Buffer.byteLength(encoded) > 8 * 1024 * 1024)
@@ -145,10 +308,26 @@ export class BusinessService {
           }),
         ],
       );
+      if (forPos)
+        return posSnapshot(
+          state,
+          Number(rows[0].version) + 1,
+          userId,
+          owner,
+          tenant.membershipId,
+        );
       return {
         version: Number(rows[0].version) + 1,
-        state: visibleBusiness(state, userId, owner, tenant.membershipId),
+        state: visibleBusiness(
+          state,
+          userId,
+          owner,
+          tenant.membershipId,
+          hrAccess,
+        ),
         holdingOwner: owner,
+        hrAccess: this.hrCompanies(tenant, state).length > 0,
+        hrCompanyIds: this.hrCompanies(tenant, state),
         userId,
       };
     });

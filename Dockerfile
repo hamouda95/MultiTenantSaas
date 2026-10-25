@@ -22,3 +22,11 @@ COPY --from=build --chown=node:node /app/apps/web/public ./apps/web/public
 USER node
 EXPOSE 3000
 CMD ["node", "apps/web/server.js"]
+
+# Render defaults to the final stage. Compose still selects api/web explicitly.
+FROM api AS render
+ENV PORT=10000
+COPY --from=build --chown=node:node /app/apps/web/.next/static /app/apps/web/.next/standalone/apps/web/.next/static
+COPY --from=build --chown=node:node /app/apps/web/public /app/apps/web/.next/standalone/apps/web/public
+EXPOSE 10000
+CMD ["node", "scripts/start-render.cjs"]

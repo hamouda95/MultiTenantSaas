@@ -48,11 +48,11 @@ describe('Security & Architecture Regression Tests', () => {
     });
 
     it('should accept valid lowercase alphanumeric hyphenated slugs', () => {
-      const valid = tenantPipe.transform({
+      const valid = CreateTenantDtoSchema.parse(tenantPipe.transform({
         name: 'Acme International',
         slug: 'acme-international-123',
         primaryColor: '#4F46E5',
-      });
+      }));
       expect(valid.slug).toBe('acme-international-123');
       expect(valid.primaryColor).toBe('#4F46E5');
     });
@@ -86,12 +86,12 @@ describe('Security & Architecture Regression Tests', () => {
     });
 
     it('should accept valid custom domains and hex colors', () => {
-      const valid = settingsPipe.transform({
+      const valid = UpdateSettingsDtoSchema.parse(settingsPipe.transform({
         primaryColor: '#10B981',
         accentColor: '#3B82F6',
         customDomain: 'portal.acme-corp.com',
         themeMode: 'DARK',
-      });
+      }));
       expect(valid.primaryColor).toBe('#10B981');
       expect(valid.customDomain).toBe('portal.acme-corp.com');
     });

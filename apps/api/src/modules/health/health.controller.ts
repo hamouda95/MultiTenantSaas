@@ -1,32 +1,33 @@
-import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
-import { RlsPostgresService } from '../../database/rls-postgres.service';
+import { Controller, Get, ServiceUnavailableException } from "@nestjs/common";
+import { RlsPostgresService } from "../../database/rls-postgres.service";
 
-@Controller('health')
+@Controller("health")
 export class HealthController {
   constructor(private readonly rlsDb: RlsPostgresService) {}
 
-  @Get('live')
+  @Get("live")
   getLiveness() {
     return {
-      status: 'ok',
+      status: "ok",
       timestamp: new Date().toISOString(),
       uptimeSeconds: Math.floor(process.uptime()),
     };
   }
 
-  @Get('ready')
+  @Get("ready")
   async getReadiness() {
     try {
       // Execute ping to verify DB readiness
-      await this.rlsDb.queryAdmin('SELECT 1');
+      await this.rlsDb.assertReadiness();
       return {
-        status: 'ready',
-        database: 'connected',
+        status: "ready",
+        database: "connected",
         timestamp: new Date().toISOString(),
-        memoryUsageMb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
       };
     } catch {
-      throw new ServiceUnavailableException('Database connectivity probe failed');
+      throw new ServiceUnavailableException(
+        "Database connectivity probe failed",
+      );
     }
   }
 }
