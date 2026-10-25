@@ -1,7 +1,7 @@
 name: SaaS validation
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, feat/commerceos-group-erp-foundation]
   pull_request:
 permissions:
   contents: read
