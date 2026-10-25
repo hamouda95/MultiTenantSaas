@@ -5,9 +5,13 @@ on:
   pull_request:
 permissions:
   contents: read
+concurrency:
+  group: saas-validation-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   security-audit:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -23,6 +27,7 @@ jobs:
 
   validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -63,8 +68,8 @@ jobs:
         run: |
           sed 's|/migrations/|infra/migrations/|g' infra/docker/init-database.sh > /tmp/init-saas.sh
           sh /tmp/init-saas.sh
-      - run: pnpm build
       - run: pnpm type-check
+      - run: pnpm build
       - run: pnpm test
       - run: pnpm --filter @saas/api test:integration
       - name: Verify Docker configuration and build both images
@@ -113,6 +118,7 @@ jobs:
 
   neon-compatible:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       postgres:
         image: pgvector/pgvector:pg18
