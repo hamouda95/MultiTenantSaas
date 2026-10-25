@@ -31,6 +31,7 @@ import { useTenantSettings } from "@/components/tenant-theme";
 import { CreateWorkspaceDialog } from "@/components/create-workspace-dialog";
 
 const NAV = [
+  { href: "/executive", label: "Pilotage groupe", icon: LayoutDashboard },
   { href: "/pos", label: "Caisse", icon: LayoutDashboard },
   { href: "/business", label: "Gestion du holding", icon: LayoutDashboard },
   { href: "/hr", label: "Contrats & congés", icon: Users },
