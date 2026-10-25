@@ -1,13 +1,54 @@
 name: SaaS validation
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, feat/commerceos-group-erp-foundation]
   pull_request:
 permissions:
   contents: read
+concurrency:
+  group: saas-validation-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
+  dependency-lock-refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Resolve patched dependency graph
+        run: pnpm install --lockfile-only --no-frozen-lockfile
+      - name: Publish lockfile for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: updated-pnpm-lockfile
+          path: pnpm-lock.yaml
+          retention-days: 2
+
+  security-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Audit production dependencies (blocking)
+        run: pnpm audit --prod --audit-level=high
+
   validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -36,7 +77,6 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm audit --prod --audit-level=high
       - run: bash -n scripts/local.sh
       - name: Initialize real PostgreSQL schema and restricted roles
         env:
@@ -49,8 +89,8 @@ jobs:
         run: |
           sed 's|/migrations/|infra/migrations/|g' infra/docker/init-database.sh > /tmp/init-saas.sh
           sh /tmp/init-saas.sh
-      - run: pnpm build
       - run: pnpm type-check
+      - run: pnpm build
       - run: pnpm test
       - run: pnpm --filter @saas/api test:integration
       - name: Verify Docker configuration and build both images
@@ -99,6 +139,7 @@ jobs:
 
   neon-compatible:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       postgres:
         image: pgvector/pgvector:pg18
