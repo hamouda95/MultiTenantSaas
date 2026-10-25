@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import {
   Check,
+  ShieldCheck,
   ChevronsUpDown,
   LayoutDashboard,
   LogOut,
@@ -31,6 +32,7 @@ import { useTenantSettings } from "@/components/tenant-theme";
 import { CreateWorkspaceDialog } from "@/components/create-workspace-dialog";
 
 const NAV = [
+  { href: "/admin", label: "Administration du groupe", icon: ShieldCheck },
   { href: "/executive", label: "Pilotage groupe", icon: LayoutDashboard },
   { href: "/pos", label: "Caisse", icon: LayoutDashboard },
   { href: "/business", label: "Gestion du holding", icon: LayoutDashboard },
@@ -247,7 +249,7 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { workspace, roles } = useTenantAccess(tenantId);
+  const { workspace, roles, isPlatformAdmin } = useTenantAccess(tenantId);
   const { data: tenant } = useQuery({
     queryKey: ["tenant", tenantId],
     queryFn: () => api.tenant(tenantId),
@@ -266,11 +268,11 @@ export function AppShell({
         name={name}
         logoUrl={settings?.settings.logoUrl}
       />
-      <Link href="/administration" className="text-sm text-accent">
+      {isPlatformAdmin && <Link href="/administration" className="text-sm text-accent">
         Administration des holdings
-      </Link>
+      </Link>}
       <nav aria-label="Navigation principale" className="flex-1 space-y-1">
-        {NAV.map(({ href, label, icon: Icon }) => {
+        {NAV.filter(item => item.href !== "/platform" || isPlatformAdmin).map(({ href, label, icon: Icon }) => {
           const full = `${base}${href}`;
           const active = pathname === full || pathname.startsWith(`${full}/`);
           return (
