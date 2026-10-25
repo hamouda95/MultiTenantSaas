@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Building2, Package, ShoppingCart, Wallet, ArrowRight } from "lucide-react";
-import { companyMetrics, currencyDigits } from "@saas/types";
+import { companyMetrics, currencyDigits, invoicePaid } from "@saas/types";
 import { api } from "@/lib/api";
 import { PageHeader } from "@/components/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,6 +37,18 @@ export default function GroupExecutivePage() {
   }));
   const totalStores = rows.reduce((sum, row) => sum + row.stores, 0);
   const totalOrders = rows.reduce((sum, row) => sum + row.metrics.openOrders, 0);
+  const visibleCompanyIds = new Set(companies.map((company) => company.id));
+  const today = new Date().toISOString().slice(0, 10);
+  const tasks = [
+    ...data!.state.orders.filter((order) => visibleCompanyIds.has(order.companyId) && order.status === "DRAFT")
+      .map((order) => ({ id: "purchase-" + order.id, companyId: order.companyId, title: "Achat à approuver", reference: order.reference })),
+    ...data!.state.orders.filter((order) => visibleCompanyIds.has(order.companyId) && ["CUSTOMS", "PARTIALLY_RECEIVED"].includes(order.status))
+      .map((order) => ({ id: "receipt-" + order.id, companyId: order.companyId, title: "Réception fournisseur", reference: order.reference })),
+    ...(data!.state.customerOrders ?? []).filter((order) => visibleCompanyIds.has(order.companyId) && ["CONFIRMED", "PARTIALLY_DELIVERED"].includes(order.status))
+      .map((order) => ({ id: "customer-" + order.id, companyId: order.companyId, title: "Commande à livrer", reference: order.reference })),
+    ...data!.state.invoices.filter((invoice) => visibleCompanyIds.has(invoice.companyId) && invoice.dueDate < today && invoice.amount > invoicePaid(data!.state, invoice.id))
+      .map((invoice) => ({ id: "invoice-" + invoice.id, companyId: invoice.companyId, title: "Facture échue impayée", reference: invoice.reference })),
+  ];
 
   return (
     <div className="space-y-6">
@@ -54,6 +66,23 @@ export default function GroupExecutivePage() {
           <Card key={label}><CardHeader><CardTitle className="flex items-center gap-2 text-sm"><Icon className="h-4 w-4" />{label}</CardTitle></CardHeader><CardContent className="text-3xl font-semibold">{value}</CardContent></Card>
         ))}
       </div>
+      <section aria-labelledby="tasks-heading" className="rounded-xl border border-border bg-surface p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 id="tasks-heading" className="text-xl font-semibold">À traiter · {tasks.length}</h2>
+          <Link href={`/t/${tenantId}/business`} className="text-sm text-accent hover:underline">Accéder aux opérations</Link>
+        </div>
+        {tasks.length === 0 ? <p className="mt-3 text-sm text-muted">Aucun document en attente dans votre périmètre.</p> : (
+          <ul className="mt-3 divide-y divide-border">
+            {tasks.slice(0, 10).map((task) => (
+              <li key={task.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
+                <span><strong>{task.title}</strong><span className="ml-2 text-muted">{task.reference} · {companies.find((company) => company.id === task.companyId)?.name}</span></span>
+                <Link href={`/t/${tenantId}/business`} className="text-accent hover:underline">Consulter</Link>
+              </li>
+            ))}
+          </ul>
+        )}
+        {tasks.length > 10 && <p className="mt-2 text-xs text-muted">Affichage limité aux dix premiers documents. Consultez l'ERP pour la liste complète.</p>}
+      </section>
       <section aria-labelledby="companies-heading" className="space-y-3">
         <h2 id="companies-heading" className="text-xl font-semibold">Performance par société</h2>
         {rows.length === 0 ? <p className="rounded-lg border border-border p-5 text-muted">Aucune société accessible.</p> :
