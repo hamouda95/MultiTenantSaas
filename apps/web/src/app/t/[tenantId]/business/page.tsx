@@ -1,6 +1,7 @@
 "use client";
 import {
   useRef,
+  useEffect,
   useState,
   useId,
   cloneElement,
@@ -540,6 +541,15 @@ export default function BusinessPage() {
     retry: false,
   });
   const [tab, setTab] = useState("group");
+  useEffect(() => {
+    const syncView = () => {
+      const view = decodeURIComponent(window.location.hash.slice(1));
+      if (tabs.some(([id]) => id === view)) setTab(view);
+    };
+    syncView();
+    window.addEventListener("hashchange", syncView);
+    return () => window.removeEventListener("hashchange", syncView);
+  }, []);
   const [profile, setProfile] = useState("tous");
   const [selected, setSelected] = useState("");
   const [warehouse, setWarehouse] = useState("");
