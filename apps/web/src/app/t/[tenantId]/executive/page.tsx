@@ -74,9 +74,9 @@ export default function GroupExecutivePage() {
         {tasks.length === 0 ? <p className="mt-3 text-sm text-muted">Aucun document en attente dans votre périmètre.</p> : (
           <ul className="mt-3 divide-y divide-border">
             {tasks.slice(0, 10).map((task) => (
-              <li key={task.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
-                <span><strong>{task.title}</strong><span className="ml-2 text-muted">{task.reference} · {companies.find((company) => company.id === task.companyId)?.name}</span></span>
-                <Link href={`/t/${tenantId}/business`} className="text-accent hover:underline">Consulter</Link>
+              <li key={task.id} className="flex flex-col items-start gap-2 py-3 text-sm sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                <span className="min-w-0"><strong className="block sm:inline">{task.title}</strong><span className="block break-words text-muted sm:ml-2 sm:inline">{task.reference} · {companies.find((company) => company.id === task.companyId)?.name}</span></span>
+                <Link href={`/t/${tenantId}/business`} className="shrink-0 rounded-md px-2 py-1 text-accent hover:bg-surface-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">Consulter</Link>
               </li>
             ))}
           </ul>
@@ -89,9 +89,9 @@ export default function GroupExecutivePage() {
           <div className="grid gap-4 lg:grid-cols-2">
             {rows.map(({ company, metrics, stores }) => (
               <Card key={company.id}>
-                <CardHeader><CardTitle className="flex items-center justify-between gap-3"><span>{company.name}</span><span className="text-sm font-normal text-muted">{company.currency}</span></CardTitle></CardHeader>
+                <CardHeader><CardTitle className="flex items-center justify-between gap-3"><span className="min-w-0 break-words">{company.name}</span><span className="shrink-0 text-sm font-normal text-muted">{company.currency}</span></CardTitle></CardHeader>
                 <CardContent>
-                  <dl className="grid grid-cols-2 gap-4 text-sm">
+                  <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
                     {[
                       ["Chiffre d'affaires", money(metrics.revenue, company.currency)],
                       ["Marge brute", money(metrics.grossMargin, company.currency)],
