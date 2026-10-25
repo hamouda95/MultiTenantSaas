@@ -7,6 +7,14 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Check,
   ShieldCheck,
+  ChevronDown,
+  ChevronRight,
+  ShoppingBag,
+  Package,
+  Wallet,
+  Store,
+  BriefcaseBusiness,
+  Building2,
   ChevronsUpDown,
   LayoutDashboard,
   LogOut,
@@ -31,17 +39,42 @@ import { Badge } from "@/components/ui/badge";
 import { useTenantSettings } from "@/components/tenant-theme";
 import { CreateWorkspaceDialog } from "@/components/create-workspace-dialog";
 
-const NAV = [
-  { href: "/admin", label: "Administration du groupe", icon: ShieldCheck },
-  { href: "/executive", label: "Pilotage groupe", icon: LayoutDashboard },
-  { href: "/pos", label: "Caisse", icon: LayoutDashboard },
-  { href: "/business", label: "Gestion du holding", icon: LayoutDashboard },
-  { href: "/hr", label: "Contrats & congés", icon: Users },
-  { href: "/platform", label: "Administration SaaS", icon: Puzzle },
-  { href: "/members", label: "Membres", icon: Users },
-  { href: "/modules", label: "Modules", icon: Puzzle },
-  { href: "/settings", label: "Apparence", icon: Palette },
-  { href: "/audit", label: "Journal d'audit", icon: ScrollText },
+const NAV_GROUPS = [
+  { title: "Direction", icon: LayoutDashboard, links: [
+    { href: "/executive", label: "Pilotage groupe" },
+    { href: "/business#pnl", label: "P&L annuel" },
+  ] },
+  { title: "Achats & fournisseurs", icon: ShoppingBag, links: [
+    { href: "/business#samples", label: "Échantillons fournisseurs" },
+    { href: "/business#purchasing", label: "Commandes & imports" },
+    { href: "/business#receipts", label: "Réceptions" },
+  ] },
+  { title: "Stocks & logistique", icon: Package, links: [
+    { href: "/business#inventory", label: "Stocks & inventaires" },
+    { href: "/business#transfers", label: "Transferts magasins" },
+    { href: "/business#intercompany", label: "Intragroupe" },
+  ] },
+  { title: "Ventes & magasins", icon: Store, links: [
+    { href: "/pos", label: "Caisse" },
+    { href: "/business#sales", label: "Historique des ventes" },
+    { href: "/business#customerOrders", label: "Commandes clients" },
+  ] },
+  { title: "Finance", icon: Wallet, links: [
+    { href: "/business#finance", label: "Banques & trésorerie" },
+    { href: "/business#overview", label: "Vue holding" },
+  ] },
+  { title: "Ressources humaines", icon: BriefcaseBusiness, links: [
+    { href: "/hr", label: "Contrats & congés" },
+    { href: "/business#hr", label: "Équipe & RH" },
+  ] },
+  { title: "Administration", icon: ShieldCheck, links: [
+    { href: "/admin", label: "Administration du groupe" },
+    { href: "/members", label: "Utilisateurs & rôles" },
+    { href: "/business#companies", label: "Sociétés & magasins" },
+    { href: "/modules", label: "Modules" },
+    { href: "/settings", label: "Apparence" },
+    { href: "/audit", label: "Journal d'audit" },
+  ] },
 ] as const;
 
 /** Popover minimal : fermeture au clic extérieur et sur Échap. */
@@ -249,6 +282,7 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [expanded, setExpanded] = useState<string>("Direction");
   const { workspace, roles, isPlatformAdmin } = useTenantAccess(tenantId);
   const { data: tenant } = useQuery({
     queryKey: ["tenant", tenantId],
@@ -262,7 +296,7 @@ export function AppShell({
   useEffect(() => setMobileOpen(false), [pathname]);
 
   const sidebar = (
-    <div className="flex h-full flex-col gap-6 p-4">
+    <div className="flex h-full min-h-0 flex-col gap-3 p-4">
       <WorkspaceSwitcher
         tenantId={tenantId}
         name={name}
@@ -271,29 +305,31 @@ export function AppShell({
       {isPlatformAdmin && <Link href="/administration" className="text-sm text-accent">
         Administration des holdings
       </Link>}
-      <nav aria-label="Navigation principale" className="flex-1 space-y-1">
-        {NAV.filter(item => item.href !== "/platform" || isPlatformAdmin).map(({ href, label, icon: Icon }) => {
-          const full = `${base}${href}`;
-          const active = pathname === full || pathname.startsWith(`${full}/`);
+      <nav aria-label="Navigation principale" className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
+        {NAV_GROUPS.map(({ title, icon: Icon, links }) => {
+          const open = expanded === title;
           return (
-            <Link
-              key={label}
-              href={full}
-              aria-current={active ? "page" : undefined}
-              className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition",
-                active
-                  ? "bg-accent-tint text-accent"
-                  : "text-muted hover:bg-surface-2 hover:text-fg",
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              {label}
-            </Link>
+            <div key={title}>
+              <button type="button" aria-expanded={open} onClick={() => setExpanded(open ? "" : title)}
+                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold hover:bg-surface-2">
+                <Icon className="h-4 w-4 shrink-0" />
+                <span className="flex-1">{title}</span>
+                {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              </button>
+              {open && <div className="mb-2 ml-5 space-y-0.5 border-l border-border pl-2">
+                {links.map(({ href, label }) => {
+                  const full = `${base}${href}`;
+                  const active = pathname === full.split("#")[0] && (href.includes("#") ? typeof window !== "undefined" && window.location.hash === "#" + href.split("#")[1] : true);
+                  return <Link key={href} href={full} aria-current={active ? "page" : undefined}
+                    onClick={() => setMobileOpen(false)}
+                    className={cn("block rounded-lg px-3 py-2 text-sm transition", active ? "bg-accent-tint font-medium text-accent" : "text-muted hover:bg-surface-2 hover:text-fg")}>{label}</Link>;
+                })}
+              </div>}
+            </div>
           );
         })}
-      </nav>
-      <div className="rounded-lg bg-surface-2 p-3 text-xs text-muted">
+        {isPlatformAdmin && <Link href={`${base}/platform`} className="block rounded-lg px-3 py-2 text-sm text-muted">Administration SaaS</Link>}
+      </nav>     <div className="rounded-lg bg-surface-2 p-3 text-xs text-muted">
         <p className="mb-1.5 font-medium text-fg">Votre rôle</p>
         <div className="flex flex-wrap gap-1">
           {roles.length ? (
