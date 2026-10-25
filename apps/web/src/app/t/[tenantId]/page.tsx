@@ -5,5 +5,5 @@ export default async function TenantHome({
   params: Promise<{ tenantId: string }>;
 }) {
   const { tenantId } = await params;
-  redirect(`/t/${encodeURIComponent(tenantId)}/business`);
+  redirect(`/t/${encodeURIComponent(tenantId)}/executive`);
 }
