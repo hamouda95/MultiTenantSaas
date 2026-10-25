@@ -6,6 +6,21 @@ on:
 permissions:
   contents: read
 jobs:
+  security-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Audit production dependencies (blocking)
+        run: pnpm audit --prod --audit-level=high
+
   validate:
     runs-on: ubuntu-latest
     services:
@@ -36,7 +51,6 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm audit --prod --audit-level=high
       - run: bash -n scripts/local.sh
       - name: Initialize real PostgreSQL schema and restricted roles
         env:
