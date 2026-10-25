@@ -46,7 +46,7 @@ let failurePage;
     slug: `browser-${suffix}`,
   });
   const tenantId = holding.tenant.id;
-  await page.goto(`/t/${tenantId}`);
+  await page.goto(`/t/${tenantId}/business`);
   await page
     .getByRole("heading", { name: "Gestion du holding", exact: true })
     .waitFor();
