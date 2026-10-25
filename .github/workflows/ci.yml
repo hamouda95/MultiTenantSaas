@@ -9,6 +9,27 @@ concurrency:
   group: saas-validation-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
+  dependency-lock-refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Resolve patched dependency graph
+        run: pnpm install --lockfile-only --no-frozen-lockfile
+      - name: Publish lockfile for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: updated-pnpm-lockfile
+          path: pnpm-lock.yaml
+          retention-days: 2
+
   security-audit:
     runs-on: ubuntu-latest
     timeout-minutes: 15
